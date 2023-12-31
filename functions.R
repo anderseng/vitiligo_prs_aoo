@@ -147,10 +147,10 @@ regression_interaction <- function(data = analysis_df,
       predictor,
       term,
       pval = `p.value`,
-      estimate = ifelse(is_binary, exp(estimate), estimate),
+      estimate,
       std_error = `std.error`,
-      lower_ci = ifelse(is_binary, exp(estimate - qnorm(0.975)), estimate - qnorm(0.975)),
-      upper_ci = ifelse(is_binary, exp(estimate + qnorm(0.975)), estimate + qnorm(0.975))
+      lower_ci = estimate - qnorm(0.975)*std_error,
+      upper_ci = estimate + qnorm(0.975)*std_error
     )
   
   return(tidy_output)

@@ -1,5 +1,5 @@
 ---
-title: "Vitiligo Age of Onset and PRS Association"
+title: "Vitiligo age-of-onset and PRS Association"
 author: "Genevieve HL Roberts"
 date: "2023-12-31"
 output:
@@ -27,8 +27,8 @@ source(here("functions.R"))
 
 In this study, we aim to investigate the association between a vitiligo 
 Polygenic Risk Score (PRS) excluding MHC Class II region SNPs and the 
-age of onset. Our hypothesis posits a correlation wherein a higher PRS 
-(excluding MHC Class II) is linked to an earlier age of onset, 
+age-of-onset. Our hypothesis posits a correlation wherein a higher PRS 
+(excluding MHC Class II) is linked to an earlier age-of-onset, 
 indicating a potential association with elevated genetic risk.
 
 Moreover, we extend our hypothesis to carriers of the extreme risk/early age 
@@ -36,7 +36,7 @@ of onset MHC Class II haplotype. In this subgroup, we anticipate that the
 impact of a high PRS without MHC Class II may be diminished due to the 
 substantial genetic risk conferred by the haplotype (haplotype OR=8.1). 
 We believe there may be an interaction effect, suggesting that the slope 
-of the regression line for age of onset ~ PRS is smaller in individuals 
+of the regression line for age-of-onset ~ PRS is smaller in individuals 
 carrying the high-risk haplotype compared to non-carriers.
 
 
@@ -110,7 +110,7 @@ analysis_df <- scale_prs(data = analysis_df,
                          pheno_cond = 0,
                          scale_columns = prs_cols)
 
-#make a case only analysis df with non-missing age of onset
+#make a case only analysis df with non-missing age-of-onset
 case_only_analysis_df <- analysis_df %>%
   filter(!is.na(VITageonset))
 ```
@@ -118,15 +118,15 @@ case_only_analysis_df <- analysis_df %>%
 \newpage
 # Results
 
-## Categorizing Age of Onset into Early- and Late- Onset Groups
+## Categorizing age-of-onset into Early- and Late- Onset Groups
 I no longer have the AOO classifications that we created previously, so I 
 have re-fit the finite mixture model to categorize GWAS123 cases as either
 early onset or late onset.  I have used the same methods here.
 
-In the eAOO paper, we report that for GWAS123,
+In the eAOO paper it says
 "After subgroup assignment and control matching, 
 the combined early-onset subgroup contained 704 cases and 9,031 controls 
-and the combined late-onset subgroup contained 1,467 cases and 19,156 controls. 
+and the combined late-onset subgroup contained 1,467 cases and 19,156 controls."
 
 ```{r fmm to get aoo groups}
 # fit a finite mixture model with 2 groups to get early and late
@@ -177,9 +177,9 @@ case_only_analysis_df <- analysis_df %>%
 summarize_aoo_cat <- case_only_analysis_df %>%
   group_by(AOO_category) %>%
   summarize(n=n(),
-            min_aoo = min(VITageonset),
             median_aoo = median(VITageonset),
             mean_aoo = mean(VITageonset),
+            min_aoo = min(VITageonset),
             max_aoo = max(VITageonset),
             sd_aoo = sd(VITageonset)
             )
@@ -189,14 +189,15 @@ pandoc.table(summarize_aoo_cat)
 
 As shown in the table above, you can see that we achieve similar sample sizes
 for early and late onset (719 early here vs. 704 in our earlier analysis
-and 1,431 late here vs. 1,467 in our earlier analysis); however, the mean
-age of onset for each group is rather different: we find mean eAOO of 6.7 here
+and 1,431 late here vs. 1,467 in our earlier analysis).
+
+However, the mean age-of-onset for each group is rather different: we find mean eAOO of 6.7 here
 versus 10.3 for GWAS123 + Rep in our earlier analysis and mean lAOO of 39 years
 here versus 34.0 for GWAS123 + Rep in our earlier analysis.
 
 \newpage
 ```{r}
-# Plot the age of onset histogram
+# Plot the age-of-onset histogram
 # Calculate means for each distribution
 means <- case_only_analysis_df %>%
   group_by(AOO_category) %>%
@@ -211,14 +212,16 @@ histogram_with_contours <- ggplot(case_only_analysis_df, aes(x = VITageonset)) +
                alpha = 0.5, size = 1, adjust = 2) +  # Adjust the smoothness here
   geom_vline(data = means, aes(xintercept = mean_value, color = factor(AOO_category)),
              linetype = "dashed", size = 1) +  # Vertical dashed lines for means
-  labs(title = "Vitiligo Age of Onset Histogram") +
-  theme_minimal() +
-  theme(legend.position = "topright")
+  theme_bw() +
+  labs(title = "Correlation between age-of-onset and PRS",
+       x = "Vitiligo age-of-onset",
+       y = "Count",
+       color = "age-of-onset Category")
 histogram_with_contours 
 ```
 
 \newpage
-## Association of each PRS with vitiligo risk
+## Associations with Vitiligo Risk (Case-Control)
 
 Next, I wanted to verify that the associations looked as I would expect
 for each of the PRSs. So, I checked the association with overall vitiligo
@@ -231,7 +234,7 @@ scaled_prs_cols <- analysis_df %>%
   names()
 
 phenotypes <- c("vitiligo", "early_onset_vitiligo", "late_onset_vitiligo")
-predictors <- c(scaled_prs_cols, "eA00_rs145954018", "generic_rs9271597")
+predictors <- c(scaled_prs_cols, "eA00_rs145954018", "generic_rs9271597", "eAOO_hap_carrier")
 
 combos <- crossing(phenotypes, predictors) %>% arrange(desc(phenotypes))
 
@@ -252,20 +255,20 @@ pandoc.table(results_df, round=2)
 
 These results look generally as I would expect, with the CONFIRMED risk score
 having the highest performance with respect to OR per standard deviation of PRS.
-The pvals = 0 mean that the p-value is lower than the numerical precision in R,
-which I believe is something like p < 1e-300.
+The P-values = 0 mean that the P-value is lower than the numerical precision in R,
+which I believe is something like P < 1e-300.
 
 Note that the scaling is different for SNPs and for PRS, so the estimates
 are not directly comparable (for PRS, the OR is per standard deviation of PRS, 
 whereas for SNPs, it is per SNP risk allele).
 
 \newpage
-## Association of each PRS with vitiligo Age of Onset
+## Association of each PRS with vitiligo age-of-onset
 
 I also checked the association with vitiligo age-of-onset
 risk (i.e. cases with non-missing age-of-onset in GWAS123):
 ```{r}
-#test the association with vitiligo age of onset
+#test the association with vitiligo age-of-onset
 aoo_results_df <- pmap_df(list(prs = predictors),
                       ~ aoo_linear_regression(
                         data = case_only_analysis_df,
@@ -281,7 +284,7 @@ aoo_results_df <- pmap_df(list(prs = predictors),
 pandoc.table(aoo_results_df, round=2)
 ```
 
-Again, these results look about as I would expect: the MHC class 2 only PRS
+Again, these results look about as I would expect: the MHC Class II only PRS
 is more strongly associated than the confirmed PRS. Nevertheless, there
 is modest association between the non-MHC Class II PRS and lower vitiligo
 age-of-onset, as we hypothesized (P=7.30e-04).
@@ -297,10 +300,10 @@ ggplot(analysis_df, aes(y = VITageonset,
                         x = no_mhc_classII_prs_scaled)) +
   geom_point(alpha = 0.3, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +  # Fitted regression line without confidence interval
-  labs(title = "Correlation between Age of Onset and PRS",
+  labs(title = "Correlation between age-of-onset and PRS",
        x = "PRS (MHC Class II Excluded)",
-       y = "Vitiligo Age of Onset",
-       color = "Age of Onset Category") +
+       y = "Vitiligo age-of-onset",
+       color = "age-of-onset Category") +
     theme_bw()
 ```
 
@@ -328,9 +331,9 @@ ggplot(analysis_df, aes(y = VITageonset,
                         color = factor(eAOO_hap_carrier))) +
   geom_point(alpha = 0.3) +  # Make points slightly transparent
   geom_smooth(method = "lm", se = TRUE, aes(group = eAOO_hap_carrier)) +  # Fitted regression line without confidence interval
-  labs(title = "Correlation between Age of Onset and PRS,\nStratified by High Risk Haplotype Carrier",
+  labs(title = "Correlation between age-of-onset and PRS,\nStratified by High Risk Haplotype Carrier",
        x = "PRS (MHC Class II Excluded)",
-       y = "Vitiligo Age of Onset",
+       y = "Vitiligo age-of-onset",
        color = "Early Onset High Risk Haplotype Carrier") +
   scale_color_manual(values = c("0" = "#66c2a5", "1" = "#fc8d62"),
                      labels = c("0" = "Non-Carrier", "1" = "Carrier")) +
