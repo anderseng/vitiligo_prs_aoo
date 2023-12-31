@@ -12,6 +12,7 @@ unnamed-chunk*
 # Session Data files
 .RData
 .RDataTmp
+.DS_Store
 
 # User-specific files
 .Ruserdata
