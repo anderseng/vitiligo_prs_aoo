@@ -1,3 +1,10 @@
+#Sensitive Data
+sensitive_data/*
+
+# LaTeX intermediates
+*.tex
+unnamed-chunk*
+
 # History files
 .Rhistory
 .Rapp.history

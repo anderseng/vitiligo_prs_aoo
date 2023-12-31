@@ -1,0 +1,343 @@
+---
+title: "Vitiligo Age of Onset and PRS Association"
+author: "Genevieve HL Roberts"
+date: "2023-12-31"
+output:
+  pdf_document:
+    keep_tex: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, results = 'asis', message = FALSE, warning = FALSE)
+```
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(broom)
+library(here)
+library(mixtools)
+library(gridExtra)
+library(pandoc)
+library(pander)
+
+source(here("functions.R"))
+```
+
+# Introduction
+
+In this study, we aim to investigate the association between a vitiligo 
+Polygenic Risk Score (PRS) excluding MHC Class II region SNPs and the 
+age of onset. Our hypothesis posits a correlation wherein a higher PRS 
+(excluding MHC Class II) is linked to an earlier age of onset, 
+indicating a potential association with elevated genetic risk.
+
+Moreover, we extend our hypothesis to carriers of the extreme risk/early age 
+of onset MHC Class II haplotype. In this subgroup, we anticipate that the 
+impact of a high PRS without MHC Class II may be diminished due to the 
+substantial genetic risk conferred by the haplotype (haplotype OR=8.1). 
+We believe there may be an interaction effect, suggesting that the slope 
+of the regression line for age of onset ~ PRS is smaller in individuals 
+carrying the high-risk haplotype compared to non-carriers.
+
+
+```{r readin}
+# Read genotypes data
+risk_genos <- read.table(here("sensitive_data/GWAS123_forRiskScore_inR.csv"), sep = ",", header = TRUE) %>%
+  mutate(vitiligo = ifelse(PHENOTYPE==2, 1, 0)) %>%
+  mutate(sex = ifelse(SEX==2, 1, 0))  %>%
+  mutate(IID = toupper(IID)) %>%
+  mutate(eAOO_hap_carrier =
+           ifelse(RS145954018 >= 1, 1, 0))
+
+# Read in PCs
+pcs <- read.table(here("sensitive_data/GWAS123_DanielIDs_Phenos_PCs.txt"), header=TRUE) %>%
+  select(IID, starts_with("g")) %>%
+  mutate(IID = toupper(IID))
+
+kCovariates <- pcs %>%
+  select(starts_with("g")) %>%
+  names()
+kCovariates <- c(kCovariates, "sex")
+
+#read in AOO
+aoo <- read.table(here("sensitive_data/GWAS123G3RepageonsetonlyFinal_from_Ying_AOO.csv"),
+                  header=TRUE, sep=",") %>%
+  mutate(IID = toupper(newID)) %>%
+  select(IID, VITageonset)
+
+
+# Read risk score weights
+weights <- read.table(here("Risk_Score_Weights_no_TagSNPs.csv"),
+                      sep = ",", header = TRUE) %>%
+  #removes the MHC Class II SNPs, which has special coding
+  filter(!SNP %in% c("RS114448410", "RS145954018:RS114448410")) 
+```
+
+```{r recode alleles}
+# Recode SNPs to make sure everything is w/r/t risk allele
+snps_to_recode <- weights %>% filter(Recode. == "Yes") %>% pull(SNP)
+
+risk_genos_recoded <- recode_snps(df=risk_genos, snps_to_recode=snps_to_recode)
+```
+
+```{r compute PRS}
+# compute the main PRS (does not include MHC Class II)
+main_prs_no_mhcII <- calculate_main_prs(risk_genos = risk_genos_recoded,
+                           weights = weights,
+                           iid_col = "IID",
+                           weights_col = "Weights_risk_direction_only") %>%
+  rename(no_mhc_classII_prs = score)
+
+#compute MHC only PRS
+mhcII_only_prs <- calculate_class2_risk_score(risk_genos = risk_genos_recoded)
+
+#join with the main dataframe and with AOO data
+analysis_df <- risk_genos %>%
+  left_join(main_prs_no_mhcII) %>%
+  left_join(mhcII_only_prs) %>%
+  left_join(pcs) %>%
+  left_join(aoo) %>%
+  mutate(CONFIRMED_prs = no_mhc_classII_prs + mhc_class2_only_prs)
+
+#select the columns that are prs
+prs_cols <- analysis_df %>%
+  select(ends_with("prs")) %>%
+  names()
+
+#scale the PRS with respect to the mean and sd in controls
+analysis_df <- scale_prs(data = analysis_df,
+                         pheno_col = "vitiligo",
+                         pheno_cond = 0,
+                         scale_columns = prs_cols)
+
+#make a case only analysis df with non-missing age of onset
+case_only_analysis_df <- analysis_df %>%
+  filter(!is.na(VITageonset))
+```
+
+\newpage
+# Results
+
+## Categorizing Age of Onset into Early- and Late- Onset Groups
+I no longer have the AOO classifications that we created previously, so I 
+have re-fit the finite mixture model to categorize GWAS123 cases as either
+early onset or late onset.  I have used the same methods here.
+
+In the eAOO paper, we report that for GWAS123,
+"After subgroup assignment and control matching, 
+the combined early-onset subgroup contained 704 cases and 9,031 controls 
+and the combined late-onset subgroup contained 1,467 cases and 19,156 controls. 
+
+```{r fmm to get aoo groups}
+# fit a finite mixture model with 2 groups to get early and late
+# onset group designations
+
+fmm_mat <- as.matrix(case_only_analysis_df$VITageonset)
+rownames(fmm_mat) <- case_only_analysis_df$IID
+
+fit_fmm <- normalmixEM(fmm_mat, k = 2)
+eaoo_posterior <- bind_cols(case_only_analysis_df$IID,
+                            fit_fmm$posterior[,1],
+                            fit_fmm$posterior[,2]) 
+colnames(eaoo_posterior) <- c("IID",
+                              "eAOO_posterior_probability",
+                              "lAOO_posterior_probability")
+
+#categorize as "eAOO" if posterior probability of eAOO group is >=80%
+eaoo_posterior <- eaoo_posterior %>%
+  mutate(AOO_category = 
+           case_when(
+             eAOO_posterior_probability >= 0.8 ~ "early_onset",
+             lAOO_posterior_probability >= 0.8 ~ "late_onset",
+             TRUE ~ NA_character_
+           ))
+
+
+analysis_df <- analysis_df %>%
+  left_join(eaoo_posterior) %>%
+  mutate(early_onset_vitiligo =
+           case_when(
+             AOO_category == "early_onset" & vitiligo == 1 ~ 1L,
+             vitiligo == 0 ~ 0L,
+             TRUE ~ NA_integer_
+           ),
+         late_onset_vitiligo =
+           case_when(
+             AOO_category == "late_onset" & vitiligo == 1 ~ 1L,
+             vitiligo == 0 ~ 0L,
+             TRUE ~ NA_integer_
+           ),
+         eA00_rs145954018 = RS145954018,
+         generic_rs9271597 = RS114448410
+         )
+
+case_only_analysis_df <- analysis_df %>%
+  filter(!is.na(VITageonset))
+
+summarize_aoo_cat <- case_only_analysis_df %>%
+  group_by(AOO_category) %>%
+  summarize(n=n(),
+            min_aoo = min(VITageonset),
+            median_aoo = median(VITageonset),
+            mean_aoo = mean(VITageonset),
+            max_aoo = max(VITageonset),
+            sd_aoo = sd(VITageonset)
+            )
+
+pandoc.table(summarize_aoo_cat)
+```
+
+As shown in the table above, you can see that we achieve similar sample sizes
+for early and late onset (719 early here vs. 704 in our earlier analysis
+and 1,431 late here vs. 1,467 in our earlier analysis); however, the mean
+age of onset for each group is rather different: we find mean eAOO of 6.7 here
+versus 10.3 for GWAS123 + Rep in our earlier analysis and mean lAOO of 39 years
+here versus 34.0 for GWAS123 + Rep in our earlier analysis.
+
+\newpage
+```{r}
+# Plot the age of onset histogram
+# Calculate means for each distribution
+means <- case_only_analysis_df %>%
+  group_by(AOO_category) %>%
+  summarize(mean_value = mean(VITageonset, na.rm = TRUE)) %>%
+  filter(!is.na(AOO_category))
+
+# Histogram with smoothed contours and vertical dashed lines for means
+histogram_with_contours <- ggplot(case_only_analysis_df, aes(x = VITageonset)) +
+  geom_histogram(binwidth = 2, alpha = 0.7, position = "identity") +
+  geom_density(aes(y = ..count.., color = factor(AOO_category)), 
+               data = subset(case_only_analysis_df, !is.na(AOO_category)),
+               alpha = 0.5, size = 1, adjust = 2) +  # Adjust the smoothness here
+  geom_vline(data = means, aes(xintercept = mean_value, color = factor(AOO_category)),
+             linetype = "dashed", size = 1) +  # Vertical dashed lines for means
+  labs(title = "Vitiligo Age of Onset Histogram") +
+  theme_minimal() +
+  theme(legend.position = "topright")
+histogram_with_contours 
+```
+
+\newpage
+## Association of each PRS with vitiligo risk
+
+Next, I wanted to verify that the associations looked as I would expect
+for each of the PRSs. So, I checked the association with overall vitiligo
+risk (i.e. in all cases and controls in GWAS123):
+
+```{r}
+#test the association of each PRS with vitiligo risk
+scaled_prs_cols <- analysis_df %>%
+  select(ends_with("_prs_scaled")) %>%
+  names()
+
+phenotypes <- c("vitiligo", "early_onset_vitiligo", "late_onset_vitiligo")
+predictors <- c(scaled_prs_cols, "eA00_rs145954018", "generic_rs9271597")
+
+combos <- crossing(phenotypes, predictors) %>% arrange(desc(phenotypes))
+
+results_df <- pmap_df(combos,
+                      ~ logistic_regression(
+                        data = analysis_df,
+                        covariates = kCovariates,
+                        pheno = ..1,
+                        prs = ..2)) %>%
+  filter(term == PRS) %>%
+  select(-term, -estimate, -std_error) %>%
+  mutate(pval = formatC(pval, format = "e", digits = 2)) %>%
+  mutate(PRS = str_remove(PRS, "_prs_scaled"))  %>%
+  rename(`PRS or SNP` = PRS)
+
+pandoc.table(results_df, round=2)
+```
+
+These results look generally as I would expect, with the CONFIRMED risk score
+having the highest performance with respect to OR per standard deviation of PRS.
+The pvals = 0 mean that the p-value is lower than the numerical precision in R,
+which I believe is something like p < 1e-300.
+
+Note that the scaling is different for SNPs and for PRS, so the estimates
+are not directly comparable (for PRS, the OR is per standard deviation of PRS, 
+whereas for SNPs, it is per SNP risk allele).
+
+\newpage
+## Association of each PRS with vitiligo Age of Onset
+
+I also checked the association with vitiligo age-of-onset
+risk (i.e. cases with non-missing age-of-onset in GWAS123):
+```{r}
+#test the association with vitiligo age of onset
+aoo_results_df <- pmap_df(list(prs = predictors),
+                      ~ aoo_linear_regression(
+                        data = case_only_analysis_df,
+                        covariates = kCovariates,
+                        pheno = "VITageonset",
+                        prs = ..1)) %>%
+  filter(term == PRS) %>%
+  select(-term, - std_error) %>%
+  mutate(pval = formatC(pval, format = "e", digits = 2)) %>%
+  mutate(PRS = str_remove(PRS, "_prs_scaled")) %>%
+  rename(`PRS or SNP` = PRS)
+
+pandoc.table(aoo_results_df, round=2)
+```
+
+Again, these results look about as I would expect: the MHC class 2 only PRS
+is more strongly associated than the confirmed PRS. Nevertheless, there
+is modest association between the non-MHC Class II PRS and lower vitiligo
+age-of-onset, as we hypothesized (P=7.30e-04).
+
+Note that the scaling is different for SNPs and for PRS, so the estimates
+are not directly comparable (for PRS, the estimate is interpreted as years
+per standard deviation of PRS, whereas for SNPs, it is interpreted
+as years per copy of SNP risk allele).
+
+\newpage
+```{r}
+ggplot(analysis_df, aes(y = VITageonset,
+                        x = no_mhc_classII_prs_scaled)) +
+  geom_point(alpha = 0.3, aes(color = factor(AOO_category))) + 
+  geom_smooth(method = "lm", se = TRUE, color="black") +  # Fitted regression line without confidence interval
+  labs(title = "Correlation between Age of Onset and PRS",
+       x = "PRS (MHC Class II Excluded)",
+       y = "Vitiligo Age of Onset",
+       color = "Age of Onset Category") +
+    theme_bw()
+```
+
+\newpage
+## Interaction Test Between eAOO SNP and PRS (excluding MHC Class II SNPs)
+```{r}
+#test the interaction
+
+aoo_int_res_df <- pmap_df(list(pheno = c("VITageonset")),
+                      ~ regression_interaction(
+                        data = case_only_analysis_df,
+                        interactor = "eAOO_hap_carrier",
+                        covariates = kCovariates,
+                        predictor= "no_mhc_classII_prs_scaled",
+                        outcome = ..1)) %>%
+  filter(str_detect(term, ":")) %>%
+  mutate(term = str_remove(term, "_scaled"))
+
+pandoc.table(aoo_int_res_df, round=2)
+```
+
+```{r}
+ggplot(analysis_df, aes(y = VITageonset,
+                        x = no_mhc_classII_prs_scaled,
+                        color = factor(eAOO_hap_carrier))) +
+  geom_point(alpha = 0.3) +  # Make points slightly transparent
+  geom_smooth(method = "lm", se = TRUE, aes(group = eAOO_hap_carrier)) +  # Fitted regression line without confidence interval
+  labs(title = "Correlation between Age of Onset and PRS,\nStratified by High Risk Haplotype Carrier",
+       x = "PRS (MHC Class II Excluded)",
+       y = "Vitiligo Age of Onset",
+       color = "Early Onset High Risk Haplotype Carrier") +
+  scale_color_manual(values = c("0" = "#66c2a5", "1" = "#fc8d62"),
+                     labels = c("0" = "Non-Carrier", "1" = "Carrier")) +
+  theme_bw()
+```
+
+Although there is a trend towards a stronger negative slope for those that do
+not carry the high-risk eAOO haplotype relative to those that do carry
+the haplotype (consistent with our hypothesis), the difference 
+is not significant (interaction P = 0.38).
