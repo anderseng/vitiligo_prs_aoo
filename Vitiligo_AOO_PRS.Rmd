@@ -47,7 +47,10 @@ risk_genos <- read.table(here("sensitive_data/GWAS123_forRiskScore_inR.csv"), se
   mutate(sex = ifelse(SEX==2, 1, 0))  %>%
   mutate(IID = toupper(IID)) %>%
   mutate(eAOO_hap_carrier =
-           ifelse(RS145954018 >= 1, 1, 0))
+           case_when(
+             RS145954018 >= 1 & RS114448410 >=1 ~ 1L,
+             RS145954018 >= 1 ~ NA_integer_,
+             TRUE ~ 0))
 
 # Read in PCs
 pcs <- read.table(here("sensitive_data/GWAS123_DanielIDs_Phenos_PCs.txt"), header=TRUE) %>%
@@ -75,9 +78,12 @@ weights <- read.table(here("Risk_Score_Weights_no_TagSNPs.csv"),
 
 ```{r recode alleles}
 # Recode SNPs to make sure everything is w/r/t risk allele
-snps_to_recode <- weights %>% filter(Recode. == "Yes") %>% pull(SNP)
+snps_to_recode <- weights %>%
+  filter(Recode. == "Yes") %>%
+  pull(SNP)
 
-risk_genos_recoded <- recode_snps(df=risk_genos, snps_to_recode=snps_to_recode)
+risk_genos_recoded <- recode_snps(df=risk_genos,
+                                  snps_to_recode=snps_to_recode)
 ```
 
 ```{r compute PRS}
@@ -123,7 +129,7 @@ I no longer have the AOO classifications that we created previously, so I
 have re-fit the finite mixture model to categorize GWAS123 cases as either
 early onset or late onset.  I have used the same methods here.
 
-In the eAOO paper it says
+In the eAOO paper it says,
 "After subgroup assignment and control matching, 
 the combined early-onset subgroup contained 704 cases and 9,031 controls 
 and the combined late-onset subgroup contained 1,467 cases and 19,156 controls."
@@ -131,7 +137,7 @@ and the combined late-onset subgroup contained 1,467 cases and 19,156 controls."
 ```{r fmm to get aoo groups}
 # fit a finite mixture model with 2 groups to get early and late
 # onset group designations
-
+set.seed(123)
 fmm_mat <- as.matrix(case_only_analysis_df$VITageonset)
 rownames(fmm_mat) <- case_only_analysis_df$IID
 
@@ -176,48 +182,57 @@ case_only_analysis_df <- analysis_df %>%
 
 summarize_aoo_cat <- case_only_analysis_df %>%
   group_by(AOO_category) %>%
-  summarize(n=n(),
-            median_aoo = median(VITageonset),
-            mean_aoo = mean(VITageonset),
-            min_aoo = min(VITageonset),
-            max_aoo = max(VITageonset),
-            sd_aoo = sd(VITageonset)
-            )
+  summarize(n = n(),
+            `Actual Median` = median(VITageonset),
+            `Actual Mean` = mean(VITageonset),
+            `Actual Minimum` = min(VITageonset),
+            `Actual Maximum` = max(VITageonset),
+            `Actual SD` = sd(VITageonset)
+  ) %>%
+  mutate(`FMM Mean` = ifelse(AOO_category == "early_onset", fit_fmm$mu[1],
+                           ifelse(AOO_category == "late_onset", fit_fmm$mu[2], NA)),
+         `FMM SD` = ifelse(AOO_category == "early_onset", fit_fmm$sigma[1],
+                           ifelse(AOO_category == "late_onset", fit_fmm$sigma[2], NA))) %>%
+  transmute(
+    `Age of Onset Category` = AOO_category,
+    n,
+    `FMM Mean`,
+    `Actual Mean`,
+    `FMM SD`,
+    `Actual SD`,
+    `Actual Minimum`,
+    `Actual Maximum`
+  )
 
-pandoc.table(summarize_aoo_cat)
+pandoc.table(summarize_aoo_cat,
+             round = 2,
+             caption="Early and Late Onset Subgroup Descriptive Statistics")
 ```
 
 As shown in the table above, you can see that we achieve similar sample sizes
 for early and late onset (719 early here vs. 704 in our earlier analysis
-and 1,431 late here vs. 1,467 in our earlier analysis).
-
-However, the mean age-of-onset for each group is rather different: we find mean eAOO of 6.7 here
-versus 10.3 for GWAS123 + Rep in our earlier analysis and mean lAOO of 39 years
+and 1,431 late here vs. 1,467 in our earlier analysis).The FMM-estimated 
+distribution means are also identical, at 10.3 here
+versus 10.3 for GWAS123 + Rep in our earlier analysis and 34.0
 here versus 34.0 for GWAS123 + Rep in our earlier analysis.
 
 \newpage
 ```{r}
-# Plot the age-of-onset histogram
-# Calculate means for each distribution
-means <- case_only_analysis_df %>%
-  group_by(AOO_category) %>%
-  summarize(mean_value = mean(VITageonset, na.rm = TRUE)) %>%
-  filter(!is.na(AOO_category))
+dist_params  <- summarize_aoo_cat %>%
+  filter(!is.na(`FMM Mean`) & !is.na(`FMM SD`)) %>%
+  transmute(AOO_category = `Age of Onset Category`,
+            FMM_mean = `FMM Mean`,
+            FMM_sd = `FMM SD` )
 
-# Histogram with smoothed contours and vertical dashed lines for means
-histogram_with_contours <- ggplot(case_only_analysis_df, aes(x = VITageonset)) +
-  geom_histogram(binwidth = 2, alpha = 0.7, position = "identity") +
-  geom_density(aes(y = ..count.., color = factor(AOO_category)), 
-               data = subset(case_only_analysis_df, !is.na(AOO_category)),
-               alpha = 0.5, size = 1, adjust = 2) +  # Adjust the smoothness here
-  geom_vline(data = means, aes(xintercept = mean_value, color = factor(AOO_category)),
-             linetype = "dashed", size = 1) +  # Vertical dashed lines for means
-  theme_bw() +
-  labs(title = "Correlation between age-of-onset and PRS",
-       x = "Vitiligo age-of-onset",
-       y = "Count",
-       color = "age-of-onset Category")
-histogram_with_contours 
+histo_plot <- plot_distributions(histogram_data = case_only_analysis_df,
+                               histogram_variable = "VITageonset",
+                               dist_df = dist_params,
+                               name_col = "AOO_category",
+                               mean_col = "FMM_mean",
+                               sd_col = "FMM_sd",
+                               size = dim(case_only_analysis_df)[1],
+                               binwidth = 2)
+histo_plot
 ```
 
 \newpage
@@ -263,7 +278,7 @@ are not directly comparable (for PRS, the OR is per standard deviation of PRS,
 whereas for SNPs, it is per SNP risk allele).
 
 \newpage
-## Association of each PRS with vitiligo age-of-onset
+## Associations with Vitiligo Age-of-Onset (Case Only)
 
 I also checked the association with vitiligo age-of-onset
 risk (i.e. cases with non-missing age-of-onset in GWAS123):
@@ -294,24 +309,39 @@ are not directly comparable (for PRS, the estimate is interpreted as years
 per standard deviation of PRS, whereas for SNPs, it is interpreted
 as years per copy of SNP risk allele).
 
-\newpage
 ```{r}
 ggplot(analysis_df, aes(y = VITageonset,
                         x = no_mhc_classII_prs_scaled)) +
-  geom_point(alpha = 0.3, aes(color = factor(AOO_category))) + 
-  geom_smooth(method = "lm", se = TRUE, color="black") +  # Fitted regression line without confidence interval
-  labs(title = "Correlation between age-of-onset and PRS",
-       x = "PRS (MHC Class II Excluded)",
-       y = "Vitiligo age-of-onset",
-       color = "age-of-onset Category") +
+  geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
+  geom_smooth(method = "lm", se = TRUE, color="black") +
+  labs(title = "Correlation Between Vitiligo Age-of-Onset and PRS",
+       x = "Vitiligo PRS (MHC Class II Excluded)",
+       y = "Vitiligo Age-of-Onset",
+       color = "Age-of-Onset Category") +
     theme_bw()
 ```
 
 \newpage
-## Interaction Test Between eAOO SNP and PRS (excluding MHC Class II SNPs)
+## Interaction Test Between High-Risk MHC Haplotype and PRS (excluding MHC Class II SNPs)
+
+My hypothesis was that the vitiligo PRS becomes less relevant when combined with
+the eAOO high-risk haplotype — essentially, that the genetic risk is already
+fairly saturated for individuals that carry the high-risk MHC Class II haplotype.
+
+As a result, I expected to observe a correlation slope close to zero for
+age-of-onset ~ PRS in those *with* the eAOO haplotype, indicating a lack of
+association. Conversely, for those *without* the high-risk haplotype,
+I anticipated a correlation slope for age-of-onset ~ PRS significantly
+less than 1.
+
+The interaction test, which compares slopes between carriers and non-carriers,
+serves as a formal assessment of this hypothesis.
+Notably, achieving statistical significance in an interaction test
+may have inadequate power, as a sample size of ~16X the sample size to detect
+the main effect is typically needed to detect an interaction effect.
+
 ```{r}
 #test the interaction
-
 aoo_int_res_df <- pmap_df(list(pheno = c("VITageonset")),
                       ~ regression_interaction(
                         data = case_only_analysis_df,
@@ -329,11 +359,11 @@ pandoc.table(aoo_int_res_df, round=2)
 ggplot(analysis_df, aes(y = VITageonset,
                         x = no_mhc_classII_prs_scaled,
                         color = factor(eAOO_hap_carrier))) +
-  geom_point(alpha = 0.3) +  # Make points slightly transparent
+  geom_point(alpha = 0.3, size=0.4) +  # Make points slightly transparent
   geom_smooth(method = "lm", se = TRUE, aes(group = eAOO_hap_carrier)) +  # Fitted regression line without confidence interval
   labs(title = "Correlation between age-of-onset and PRS,\nStratified by High Risk Haplotype Carrier",
-       x = "PRS (MHC Class II Excluded)",
-       y = "Vitiligo age-of-onset",
+       x = "Vitiligo PRS (MHC Class II Excluded)",
+       y = "Vitiligo Age-of-Onset",
        color = "Early Onset High Risk Haplotype Carrier") +
   scale_color_manual(values = c("0" = "#66c2a5", "1" = "#fc8d62"),
                      labels = c("0" = "Non-Carrier", "1" = "Carrier")) +
@@ -344,3 +374,60 @@ Although there is a trend towards a stronger negative slope for those that do
 not carry the high-risk eAOO haplotype relative to those that do carry
 the haplotype (consistent with our hypothesis), the difference 
 is not significant (interaction P = 0.38).
+
+### Stratified Association in Early and Late Onset Groups
+Due to power limitations in the interaction test, I performed a stratified
+analysis in the early- and late-onset groups separately.
+
+```{r}
+#test the association with vitiligo age-of-onset
+eAOO_res <- aoo_linear_regression(
+                        data = filter(case_only_analysis_df, early_onset_vitiligo==1),
+                        covariates = kCovariates,
+                        pheno = "VITageonset",
+                        prs = "no_mhc_classII_prs_scaled") %>%
+  filter(term == PRS) %>%
+  mutate(AOO_category = "early_onset")
+
+lAOO_res <- aoo_linear_regression(
+                        data = filter(case_only_analysis_df, late_onset_vitiligo==1),
+                        covariates = kCovariates,
+                        pheno = "VITageonset",
+                        prs = "no_mhc_classII_prs_scaled") %>%
+  filter(term == PRS) %>%
+  mutate(AOO_category = "late_onset")
+
+strat_aoo_results_df <- bind_rows(eAOO_res, lAOO_res) %>%
+  select(-term, - std_error) %>%
+  mutate(pval = formatC(pval, format = "e", digits = 2)) %>%
+  mutate(PRS = str_remove(PRS, "_prs_scaled")) %>%
+  rename(`PRS` = PRS) %>%
+  select(AOO_category, everything())
+
+pandoc.table(strat_aoo_results_df,
+             round=2,
+             caption = "Stratified Association between PRS and Age-of-Onset in Early- and Late-Onset Groups")
+```
+
+```{r}
+
+categorized_only_analysis_df <- case_only_analysis_df %>%
+  filter(!is.na(AOO_category))
+
+ggplot(categorized_only_analysis_df, aes(y = VITageonset,
+                        x = no_mhc_classII_prs_scaled)) +
+  geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
+  geom_smooth(method = "lm", se = TRUE, color="black") +
+  facet_grid(~AOO_category) + 
+  labs(title = "Correlation Between Vitiligo Age-of-Onset and PRS
+       Stratified by Early- and Late- Onset Groups",
+       x = "Vitiligo PRS (MHC Class II Excluded)",
+       y = "Vitiligo Age-of-Onset",
+       color = "Age-of-Onset Category") +
+    theme_bw() +
+  geom_text(data = strat_aoo_results_df, aes(label = paste0("P-value=", pval)),
+             x = Inf, y = 85, hjust = 1, vjust = 1, size = 3, color = "black")
+```
+
+
+

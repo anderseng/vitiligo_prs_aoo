@@ -62,6 +62,67 @@ scale_prs <- function(data = analysis_df,
   return(data)
 }
 
+# Write a function that creates normal distributions for plotting
+generate_plot_dist_data <- function(dist_df = dist_params,
+                                    name_col = "AOO_category",
+                                    mean_col = "FMM_mean",
+                                    sd_col = "FMM_sd",
+                                    size = 1000) {
+  set.seed(123)
+  data <- data.frame()
+  for (i in seq_len(nrow(dist_df))) {
+    dist_name <- dist_df %>% slice(i) %>% pull(!!sym(name_col))
+    dist_mean <- dist_df %>% slice(i) %>% pull(!!sym(mean_col))
+    dist_sd <- dist_df %>% slice(i) %>% pull(!!sym(sd_col))
+    
+    dist_data <- data.frame(
+      x = rnorm(size, mean = dist_mean, sd = dist_sd),
+      group = rep(dist_name, each = size)
+    )
+    
+    data <- rbind(data, dist_data)
+  }
+  return(data)
+}
+
+# write a plotting function for the AOO histogram with overlayed distributions
+plot_distributions <- function(histogram_data = case_only_analysis_df,
+                               histogram_variable = "VITageonset",
+                               dist_df = dist_params,
+                               name_col = "AOO_category",
+                               mean_col = "FMM_mean",
+                               sd_col = "FMM_sd",
+                               size = dim(case_only_analysis_df)[1],
+                               binwidth = 2) {
+  # Generate data using the function
+  density_data <- generate_plot_dist_data(dist_df, name_col, mean_col, sd_col, size)
+  
+  # Assuming you have another data frame for the independent data
+  independent_data <- tibble(x = histogram_data[[histogram_variable]])
+  
+  vlines <- purrr::map2(density_data[[mean_col]], density_data[[name_col]],
+                        ~geom_vline(xintercept = .x,
+                                    color = .y,
+                                    linetype = "dashed",
+                                    size = 1))
+  # Create the plot
+  ggplot() +
+    geom_histogram(data = independent_data, aes(x = x, y = ..count..), 
+                   binwidth = binwidth, fill = "gray", alpha = 0.7) +
+    geom_density(data = density_data, aes(x = x, y = ..count.., fill=group),
+                 alpha = 0.2, adjust = 2) +
+    geom_vline(data = dist_df, aes(xintercept = !!sym(mean_col)),
+               color = "black", linetype = "dashed", size = 0.5) +
+    labs(title = "Early- and Late-Onset Groups Defined by FMM",
+         x = "Vitiligo Age-of-Onset",
+         y = "Count") +
+    vlines +
+    theme_bw()
+}
+
+
+
+
 # Function to compute logistic regression results
 logistic_regression <- function(data = analysis_df,
                                 pheno,
