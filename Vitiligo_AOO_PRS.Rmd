@@ -428,6 +428,66 @@ ggplot(categorized_only_analysis_df, aes(y = VITageonset,
   geom_text(data = strat_aoo_results_df, aes(label = paste0("P-value=", pval)),
              x = Inf, y = 85, hjust = 1, vjust = 1, size = 3, color = "black")
 ```
+### Stratified Association by High-Risk MHC Haplotype Carrier Status
+Due to power limitations in the interaction test, I performed a stratified
+analysis in carriers vs. non-carries
+
+```{r}
+#test the association with vitiligo age-of-onset
+case_only_analysis_df <-
+  case_only_analysis_df %>%
+  mutate(high_risk_MHC_haplotype_carrier =
+           ifelse(
+             eAOO_hap_carrier==1, "carrier", "non-carrier"
+           ))
+
+
+hap_carrier_res <- aoo_linear_regression(
+                        data = filter(case_only_analysis_df, high_risk_MHC_haplotype_carrier=="carrier"),
+                        covariates = kCovariates,
+                        pheno = "VITageonset",
+                        prs = "no_mhc_classII_prs_scaled") %>%
+  filter(term == PRS) %>%
+  mutate(high_risk_MHC_haplotype_carrier = "carrier")
+
+non_carrier_res <- aoo_linear_regression(
+                        data = filter(case_only_analysis_df,high_risk_MHC_haplotype_carrier=="non-carrier"),
+                        covariates = kCovariates,
+                        pheno = "VITageonset",
+                        prs = "no_mhc_classII_prs_scaled") %>%
+  filter(term == PRS) %>%
+  mutate(high_risk_MHC_haplotype_carrier = "non-carrier")
+
+strat_hap_aoo_results_df <- bind_rows(hap_carrier_res, non_carrier_res) %>%
+  select(-term, - std_error) %>%
+  mutate(pval = formatC(pval, format = "e", digits = 2)) %>%
+  mutate(PRS = str_remove(PRS, "_prs_scaled")) %>%
+  rename(`PRS` = PRS) %>%
+  select(high_risk_MHC_haplotype_carrier, everything())
+
+pandoc.table(strat_hap_aoo_results_df,
+             round=2,
+             caption = "Stratified Association between PRS and Age-of-Onset in High Risk Haplotype Carrier Groups")
+```
+
+```{r}
+categorized_only_analysis_df <- case_only_analysis_df %>%
+  filter(!is.na(high_risk_MHC_haplotype_carrier))
+
+ggplot(categorized_only_analysis_df, aes(y = VITageonset,
+                        x = no_mhc_classII_prs_scaled)) +
+  geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
+  geom_smooth(method = "lm", se = TRUE, color="black") +
+  facet_grid(~high_risk_MHC_haplotype_carrier) + 
+  labs(title = "Correlation Between Vitiligo Age-of-Onset and PRS
+       Stratified by High-Risk MHC Haplotype Carriers",
+       x = "Vitiligo PRS (MHC Class II Excluded)",
+       y = "Vitiligo Age-of-Onset",
+       color = "Age-of-Onset Category") +
+    theme_bw() +
+  geom_text(data = strat_hap_aoo_results_df, aes(label = paste0("P-value=", pval)),
+             x = Inf, y = 85, hjust = 1, vjust = 1, size = 3, color = "black")
+```
 
 
 
