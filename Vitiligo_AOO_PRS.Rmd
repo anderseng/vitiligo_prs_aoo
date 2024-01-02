@@ -428,6 +428,8 @@ ggplot(categorized_only_analysis_df, aes(y = VITageonset,
   geom_text(data = strat_aoo_results_df, aes(label = paste0("P-value=", pval)),
              x = Inf, y = 85, hjust = 1, vjust = 1, size = 3, color = "black")
 ```
+
+\newpage
 ### Stratified Association by High-Risk MHC Haplotype Carrier Status
 Due to power limitations in the interaction test, I performed a stratified
 analysis in carriers vs. non-carries
