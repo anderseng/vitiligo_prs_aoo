@@ -1,7 +1,7 @@
 ---
 title: "Vitiligo age-of-onset and PRS Association"
 author: "Genevieve HL Roberts"
-date: "2023-12-31"
+date: "2024-1-22"
 output:
   pdf_document:
     keep_tex: true
@@ -20,6 +20,7 @@ library(gridExtra)
 library(lubridate)
 library(pandoc)
 library(pander)
+library(car)
 
 source(here("functions.R"))
 ```
@@ -490,13 +491,13 @@ First, I have downsampled cases so that there are exactly 700 cases with early-o
 
 ```{r}
 #downsample so that early onset cases = late onset cases
+set.seed(123)
 analysis_df_downsample <- analysis_df %>%
   filter(!is.na(AOO_category)) %>%
   group_by(AOO_category) %>%
   sample_n(700) %>%
   ungroup() %>%
   bind_rows(filter(analysis_df, vitiligo == 0))
-
 
 phenotypes <- c("early_onset_vitiligo",
                 "late_onset_vitiligo")
@@ -530,6 +531,20 @@ pivot_eaoo_laoo_all_snps <- early_v_late_all_snps %>%
 Below, I have plotted the effect estimates in the early-onset and late-onset group together. If the other loci have generally equivalent effects in both groups, we expect that the points should generally fall around the y=x line (denoted in red).  If, on the other hand, there is effect size dilution in the early-onset group, we expect that the slope will be <1.
 
 ```{r, fig.align='center'}
+# Test the hypothesis that the slope is < 1
+formula <- as.formula(paste("estimate_early_onset_vitiligo", "~", "estimate_late_onset_vitiligo"))
+
+compare_snps_mod <- lm(formula,
+             data = filter(pivot_eaoo_laoo_all_snps,
+              !SNP %in% c("RS145954018", "RS114448410")))
+hypothesis <- c("estimate_late_onset_vitiligo = 1") 
+
+test_compare_snps_mod <- linearHypothesis(compare_snps_mod, hypothesis)
+
+pval_compare_snps <- test_compare_snps_mod$`Pr(>F)`[2]
+slope_compare_snps <- compare_snps_mod$coefficients[2]
+
+##make the plot
 ggplot(filter(pivot_eaoo_laoo_all_snps,
               !SNP %in% c("RS145954018", "RS114448410")),
 #ggplot(pivot_eaoo_laoo_all_snps, #to test what it would look like with Class II SNPs      
@@ -542,9 +557,14 @@ ggplot(filter(pivot_eaoo_laoo_all_snps,
   xlim(0,0.7) +
   ylim(0,0.7) +
   xlab(paste0("Late-Onset Vitiligo Non-MHC Class II SNP ", "\u03B2", "s")) +
-  ylab(paste0("Early-Onset Vitiligo Non-MHC Class II SNP ", "\u03B2", "s"))
+  ylab(paste0("Early-Onset Vitiligo Non-MHC Class II SNP ", "\u03B2", "s")) +
+  geom_text(aes(label = paste0("P-value = ", round(pval_compare_snps, 2))),
+             x = 0.55, y = 0.7, hjust = 0, vjust = 0, size = 3, color = "black") +
+  geom_text(aes(label = paste0("\u03B2 = ", round(slope_compare_snps,2))),
+          x = 0.55, y = 0.65, hjust = 0, vjust = 0, size = 3, color = "black")
 ```
 
+\newpage
 ## Year of Onset Analysis
 For a subset of cases, I was able to find year-off-onset data.
 
