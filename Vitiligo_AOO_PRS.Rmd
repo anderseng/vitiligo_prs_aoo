@@ -17,6 +17,7 @@ library(broom)
 library(here)
 library(mixtools)
 library(gridExtra)
+library(lubridate)
 library(pandoc)
 library(pander)
 
@@ -68,12 +69,22 @@ aoo <- read.table(here("sensitive_data/GWAS123G3RepageonsetonlyFinal_from_Ying_A
   mutate(IID = toupper(newID)) %>%
   select(IID, VITageonset)
 
+# Read in year of onset data
+yoo <- read.table(here("sensitive_data/AgeonsetDurationExpansion.csv"),
+                  header=TRUE, sep=",") %>%
+  mutate(IID = toupper(newID)) %>%
+  mutate(birth_year = as.numeric(str_extract(DOB, "\\d+$"))) %>%
+  mutate(birth_year =
+           ifelse(birth_year >= 5 & birth_year <= 99,
+                  birth_year + 1900, birth_year + 2000)) %>%
+  mutate(year_of_onset = birth_year + VITageonset) %>%
+  select(IID, year_of_onset)
 
 # Read risk score weights
 weights <- read.table(here("Risk_Score_Weights_no_TagSNPs.csv"),
                       sep = ",", header = TRUE) %>%
   #removes the MHC Class II SNPs, which has special coding
-  filter(!SNP %in% c("RS114448410", "RS145954018:RS114448410")) 
+  filter(!SNP %in% c("RS114448410", "RS145954018:RS114448410"))
 ```
 
 ```{r recode alleles}
@@ -98,11 +109,12 @@ main_prs_no_mhcII <- calculate_main_prs(risk_genos = risk_genos_recoded,
 mhcII_only_prs <- calculate_class2_risk_score(risk_genos = risk_genos_recoded)
 
 #join with the main dataframe and with AOO data
-analysis_df <- risk_genos %>%
+analysis_df <- risk_genos_recoded %>%
   left_join(main_prs_no_mhcII) %>%
   left_join(mhcII_only_prs) %>%
   left_join(pcs) %>%
   left_join(aoo) %>%
+  left_join(yoo) %>%
   mutate(CONFIRMED_prs = no_mhc_classII_prs + mhc_class2_only_prs)
 
 #select the columns that are prs
@@ -391,6 +403,7 @@ plot_by_hap <- ggplot(categorized_only_analysis_df, aes(y = VITageonset,
 plot_by_hap
 ```
 
+
 ```{r}
 aoo_by_hap_summ <- case_only_analysis_df %>%
   group_by(AOO_category, high_risk_MHC_haplotype_carrier) %>%
@@ -469,6 +482,152 @@ early_late_plot <- ggplot(categorized_only_analysis_df, aes(y = VITageonset,
 
 early_late_plot
 ```
+
+
+### Compare non-MHC SNP effect estimates in early- and late-onset
+
+First, I have downsampled cases so that there are exactly 700 cases with early-onset and 700 cases with late-onset. Then, I computed the association between each of the non-MHC lead GWAS variants and disease risk.
+
+```{r}
+#downsample so that early onset cases = late onset cases
+analysis_df_downsample <- analysis_df %>%
+  filter(!is.na(AOO_category)) %>%
+  group_by(AOO_category) %>%
+  sample_n(700) %>%
+  ungroup() %>%
+  bind_rows(filter(analysis_df, vitiligo == 0))
+
+
+phenotypes <- c("early_onset_vitiligo",
+                "late_onset_vitiligo")
+
+predictors <- analysis_df %>%
+  select(starts_with("RS")) %>%
+  colnames(.)
+
+combos <- crossing(phenotypes, predictors) %>% arrange(desc(phenotypes))
+
+early_v_late_all_snps <- pmap_df(combos,
+                      ~ logistic_regression(
+                        data = analysis_df_downsample,
+                        covariates = kCovariates,
+                        pheno = ..1,
+                        prs = ..2)) %>%
+  filter(term == PRS) %>%
+  rename(SNP=PRS)
+
+pivot_eaoo_laoo_all_snps <- early_v_late_all_snps %>%
+  select(-term) %>%
+  mutate(z=estimate/std_error) %>%
+  pivot_wider(names_from = c(Phenotype),
+              values_from = c(z, estimate, std_error)) %>%
+  group_by(SNP) %>%
+  summarise(across(everything(), ~ first(na.omit(.)))) %>%
+  ungroup()
+
+```
+
+Below, I have plotted the effect estimates in the early-onset and late-onset group together. If the other loci have generally equivalent effects in both groups, we expect that the points should generally fall around the y=x line (denoted in red).  If, on the other hand, there is effect size dilution in the early-onset group, we expect that the slope will be <1.
+
+```{r, fig.align='center'}
+ggplot(filter(pivot_eaoo_laoo_all_snps,
+              !SNP %in% c("RS145954018", "RS114448410")),
+#ggplot(pivot_eaoo_laoo_all_snps, #to test what it would look like with Class II SNPs      
+       aes(x = estimate_late_onset_vitiligo,
+           y = estimate_early_onset_vitiligo)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  theme_bw() +
+  geom_abline(intercept=0, slope=1, color="red") +
+  xlim(0,0.7) +
+  ylim(0,0.7) +
+  xlab(paste0("Late-Onset Vitiligo Non-MHC Class II SNP ", "\u03B2", "s")) +
+  ylab(paste0("Early-Onset Vitiligo Non-MHC Class II SNP ", "\u03B2", "s"))
+```
+
+## Year of Onset Analysis
+For a subset of cases, I was able to find year-off-onset data.
+
+```{r}
+yoo_only_df <- analysis_df %>%
+  filter(!is.na(year_of_onset)) %>%
+    mutate(period = 
+             case_when(
+    year_of_onset < 1950 ~ "<1951",
+    year_of_onset >= 1951 & year_of_onset <= 1969 ~ "1951-1969",
+    year_of_onset >= 1970 & year_of_onset <= 2004 ~ "1970-2004",
+    year_of_onset >= 2005 ~ "2005-2013"
+  )) %>%
+   mutate(period_ordinal = 
+             case_when(
+    year_of_onset < 1950 ~ NA_integer_,
+    year_of_onset >= 1951 & year_of_onset <= 1969 ~ 0,
+    year_of_onset >= 1970 & year_of_onset <= 2004 ~ 1,
+    year_of_onset >= 2005 ~ 2))
+
+yoo_only_df_filt <-  yoo_only_df %>%
+  filter(period != "<1951" & !is.na(period)) 
+
+summary_yoo <- yoo_only_df_filt%>%
+  group_by(period) %>%
+  summarize(n=n(),
+            carriers = sum(eAOO_hap_carrier, na.rm = TRUE),
+            mean_no_mhc_prs = mean(no_mhc_classII_prs_scaled, na.rm=TRUE),
+            mean_eAOO_PP = mean(eAOO_posterior_probability, na.rm=TRUE)) %>%
+  mutate(percent_carriers = carriers/n*100) %>%
+  transmute(
+    `Period` = period,
+    `n Total Vitiligo Cases` = n,
+    `Average Prob. of Early Onset` = mean_eAOO_PP,
+    `n MHC High Risk Haplotype Carriers` = carriers,
+    `% Haplotype Carriers` = percent_carriers,
+    `Mean PRS` = mean_no_mhc_prs
+  )
+
+pandoc.table(summary_yoo)
+```
+
+\newpage
+#### Association between eAOO SNP and year of onset
+```{r}
+formula <- as.formula(paste("year_of_onset", "~", 
+                            paste(c("eAOO_hap_carrier",
+                            kCovariates), collapse = " + ")))
+eaoo_year_onset_res <- lm(formula,
+             data = yoo_only_df_filt) %>%
+  broom::tidy()
+pandoc.table(eaoo_year_onset_res)
+```
+
+\newpage
+#### Association between PRS and year of onset period
+
+We noticed that in the table, the mean PRS appears as though it may be increasing
+with year of onset.  We explicitly test that hypothesis here.
+
+```{r, fig.align='center'}
+ggplot(yoo_only_df_filt, aes(x = period, y = no_mhc_classII_prs_scaled, fill = period)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1, fill = "white", color = "black") +
+  theme_minimal()
+```
+
+```{r}
+formula <- as.formula(paste("no_mhc_classII_prs_scaled", "~", 
+                            paste(c("factor(period)",
+                            kCovariates), collapse = " + ")))
+prs_reg <- lm(formula,
+             data = yoo_only_df_filt) %>%
+  broom::tidy()
+pandoc.table(prs_reg)
+```
+
+
+
+
+
+
+
 
 
 
