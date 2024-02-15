@@ -48,6 +48,8 @@ calculate_class2_risk_score <- function(risk_genos) {
 }
 
 # write a function that scales the PRS based on controls
+library(dplyr)
+
 scale_prs <- function(data = analysis_df,
                       pheno_col = "vitiligo",
                       pheno_cond = 0,
@@ -57,10 +59,20 @@ scale_prs <- function(data = analysis_df,
     std_dev_val <- sd(data[data[[pheno_col]] == pheno_cond, i], na.rm = TRUE)
     
     new_col_name <- paste0(i, "_scaled")
-    data <- data %>% mutate(!!sym(new_col_name) := (data[[i]] - mean_val) / std_dev_val)
+    percentile_col_name <- paste0(i, "_percentile")
+    
+    # Calculate percentile
+    control_prs <- na.omit(data[data[[pheno_col]] == pheno_cond, i])
+    ecdf_func <- ecdf(control_prs)
+    percentiles <- ifelse(data$case_control == "control", ecdf_func(data[[i]]), NA)
+    
+    data <- data %>% 
+      mutate(!!sym(new_col_name) := (data[[i]] - mean_val) / std_dev_val,
+             !!sym(percentile_col_name) := ecdf_func(!!sym(i)))
   }
   return(data)
 }
+
 
 # Write a function that creates normal distributions for plotting
 generate_plot_dist_data <- function(dist_df = dist_params,
