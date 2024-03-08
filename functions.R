@@ -170,7 +170,8 @@ aoo_linear_regression <- function(data = analysis_df,
                                 covariates = kCovariates) {
   formula <- as.formula(paste(pheno, "~",
                               paste(c(prs, covariates), collapse = " + ")))
-  model <- glm(formula, data = data)
+  model <- lm(formula, data = data)
+  
   
   # Create a tidy data frame
   tidy_output <- model %>%
@@ -185,6 +186,9 @@ aoo_linear_regression <- function(data = analysis_df,
       lower_ci = estimate - qnorm(0.975) * std_error,
       upper_ci = estimate + qnorm(0.975) * std_error
     )
+  
+  adj_r_squared <- summary(model)$adj.r.squared
+  tidy_output$adj_r_squared <- adj_r_squared
   
   return(tidy_output)
 }

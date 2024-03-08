@@ -375,13 +375,17 @@ aoo_results_df <- pmap_df(list(prs = predictors),
                         pheno = "VITageonset",
                         prs = ..1)) %>%
   filter(term == PRS) %>%
-  select(-term, - std_error) %>%
+  select(-Phenotype, -term, - std_error) %>%
   mutate(pval = formatC(pval, format = "e", digits = 2)) %>%
-  mutate(PRS = str_remove(PRS, "_prs_scaled")) %>%
+  mutate(adj_r_squared = formatC(adj_r_squared, digits = 3)) %>%
+  mutate(PRS = str_remove(PRS, "_scaled")) %>%
   rename(`PRS or SNP` = PRS)
 
 pandoc.table(aoo_results_df, round=2)
 ```
+
+
+
 
 Again, these results look about as I would expect: the MHC Class II only PRS
 is more strongly associated than the confirmed PRS. Nevertheless, there
