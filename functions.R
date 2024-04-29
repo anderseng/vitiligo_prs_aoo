@@ -184,11 +184,10 @@ aoo_linear_regression <- function(data = analysis_df,
       estimate,
       std_error = `std.error`,
       lower_ci = estimate - qnorm(0.975) * std_error,
-      upper_ci = estimate + qnorm(0.975) * std_error
+      upper_ci = estimate + qnorm(0.975) * std_error,
+      n_obs = glance(model)$nobs,
+      adj_r_sq = glance(model)$adj.r.squared
     )
-  
-  adj_r_squared <- summary(model)$adj.r.squared
-  tidy_output$adj_r_squared <- adj_r_squared
   
   return(tidy_output)
 }
