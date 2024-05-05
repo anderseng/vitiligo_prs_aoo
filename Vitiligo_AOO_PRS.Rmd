@@ -127,7 +127,8 @@ prs_cols <- analysis_df %>%
 analysis_df <- scale_prs(data = analysis_df,
                          pheno_col = "vitiligo",
                          pheno_cond = 0,
-                         scale_columns = prs_cols)
+                         scale_columns = prs_cols) %>%
+  filter(!is.na(CONFIRMED_prs))
 
 #make a case only analysis df with non-missing age-of-onset
 case_only_analysis_df <- analysis_df %>%
@@ -260,11 +261,12 @@ ggplot() +
   theme_minimal()
 ```
 
+## Compare Top 1 Percent PRS in Early vs Late Onset
 ```{r}
 analysis_df <- analysis_df %>%
   mutate(no_mhc_classII_prs_category =
            case_when(
-             no_mhc_classII_prs_scaled >= 2 ~ "High PRS",
+             no_mhc_classII_prs_percentile >= 0.99 ~ "High PRS",
              TRUE ~ "Normal PRS"
            )) %>%
   mutate(age_onset_category =
@@ -314,6 +316,7 @@ fisher_p_value <- fisher.test(matrix(age_extremes_ct_table$n,
                                                       c("High PRS", "Normal PRS"))))$p.value
 
 pandoc.table(age_extremes_ct_table )
+print(str_c("Fisher's Exact P-value: ", round(fisher_p_value, 2)))
 
 ```
 
@@ -321,10 +324,9 @@ pandoc.table(age_extremes_ct_table )
 
 \newpage
 ## Associations with Vitiligo Risk (Case-Control)
-
-Next, I wanted to verify that the associations looked as I would expect
-for each of the PRSs. So, I checked the association with overall vitiligo
-risk (i.e. in all cases and controls in GWAS123):
+To verify that the associations look in line with previous estimates,
+we check the association of the PRS and the MHC Class II high-risk SNPs
+with overall vitiligo risk (i.e. in all cases and controls in GWAS123):
 
 ```{r}
 #test the association of each PRS with vitiligo risk
@@ -384,11 +386,8 @@ aoo_results_df <- pmap_df(list(prs = predictors),
 pandoc.table(aoo_results_df, round=2)
 ```
 
-
-
-
-Again, these results look about as I would expect: the MHC Class II only PRS
-is more strongly associated than the confirmed PRS. Nevertheless, there
+The MHC Class II only PRS (P=4.01e-22) is more strongly associated with age-of-onset 
+than the confirmed PRS (P=1.59e-15). Nevertheless, there
 is modest association between the non-MHC Class II PRS and lower vitiligo
 age-of-onset, as we hypothesized (P=7.30e-04).
 
@@ -399,18 +398,36 @@ as years per copy of SNP risk allele).
 
 ```{r}
 ggplot(analysis_df, aes(y = VITageonset,
+                        x = CONFIRMED_prs_scaled)) +
+  geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
+  geom_smooth(method = "lm", se = TRUE, color="black") +
+  labs(title = "",
+       x = "Vitiligo PRS",
+       y = "Vitiligo Age-of-Onset",
+       color = "Age-of-Onset Category") +
+    theme_bw() +
+  xlim(-3, 5) +
+  geom_text(aes(label = str_c("P-value = ", "1.59e-15")),
+             x = 4.9, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
+  geom_text(aes(label = str_c("\u03B2 = ", "-2.37")),
+          x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black")
+```
+
+
+```{r}
+ggplot(analysis_df, aes(y = VITageonset,
                         x = no_mhc_classII_prs_scaled)) +
   geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +
-  labs(title = "Vitiligo Age-of-Onset and PRS",
+  labs(title = "",
        x = "Vitiligo PRS (MHC Class II Excluded)",
        y = "Vitiligo Age-of-Onset",
        color = "Age-of-Onset Category") +
     theme_bw() +
   xlim(-3, 5) +
-  geom_text(aes(label = paste0("P-value = ", "7.3e-04")),
+  geom_text(aes(label = str_c("P-value = ", "7.3e-04")),
              x = 4.9, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
-  geom_text(aes(label = paste0("\u03B2 = ", "-1.03")),
+  geom_text(aes(label = str_c("\u03B2 = ", "-1.03")),
           x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black")
 ```
 
@@ -549,7 +566,9 @@ pandoc.table(risk_in_hap_carriers, round=2)
 
 ### Compare non-MHC SNP effect estimates in early- and late-onset
 
-First, I have downsampled cases so that there are exactly 700 cases with early-onset and 700 cases with late-onset. Then, I computed the association between each of the non-MHC lead GWAS variants and disease risk.
+First, downsample cases so that there are exactly 700 cases with early-onset and
+700 cases with late-onset. Then, compute the association between each of the 
+non-MHC lead GWAS variants and disease risk.
 
 ```{r}
 #downsample so that early onset cases = late onset cases
@@ -695,13 +714,6 @@ pandoc.table(eaoo_year_onset_res)
 We noticed that in the table, the mean PRS appears as though it may be increasing
 with year of onset.  We explicitly test that hypothesis here.
 
-```{r, fig.align='center'}
-ggplot(yoo_only_df_filt, aes(x = period, y = no_mhc_classII_prs_scaled, fill = period)) +
-  geom_violin() +
-  geom_boxplot(width = 0.1, fill = "white", color = "black") +
-  theme_minimal()
-```
-
 ```{r}
 formula <- as.formula(paste("no_mhc_classII_prs_scaled", "~", 
                             paste(c("period_ordinal",
@@ -712,6 +724,31 @@ prs_reg <- lm(formula,
 pandoc.table(prs_reg)
 ```
 
+```{r, fig.align='center'}
+# Calculate mean for each time period
+mean_data <- yoo_only_df_filt %>%
+  group_by(period) %>%
+  summarize(mean_prs = mean(no_mhc_classII_prs_scaled))
+
+intercept <- prs_reg %>% filter(term == "(Intercept)") %>% pull(estimate)
+slope <- prs_reg %>% filter(term == "period_ordinal") %>% pull(estimate)
+pval <- prs_reg %>% filter(term == "period_ordinal") %>% pull(p.value)
+
+# Plot
+ggplot(yoo_only_df_filt, aes(x = period, y = no_mhc_classII_prs_scaled, fill = period)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1, fill = "white", color = "black") +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, color = "black") +  # Add mean points
+  geom_abline(intercept = intercept, slope = slope, color = "blue") +  # Add regression line
+  xlab("Time Period") +
+  ylab("Incident Vitiligo Case PRS (MHC Class II Excluded)") +
+  geom_text(aes(label = paste0("P-value = ", round(pval, 2))),
+             x = max(yoo_only_df_filt$period), y = max(yoo_only_df_filt$no_mhc_classII_prs_scaled), hjust = 1, vjust = 1, size = 3, color = "black") +
+  geom_text(aes(label = paste0("\u03B2 = ", round(slope,2))),
+          x = max(yoo_only_df_filt$period), y = max(yoo_only_df_filt$no_mhc_classII_prs_scaled) - 0.4, hjust = 1, vjust = 1, size = 3, color = "black") +
+  theme_bw()
+
+```
 
 
 
