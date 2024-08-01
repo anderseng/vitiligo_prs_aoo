@@ -1,7 +1,7 @@
 ---
 title: "Vitiligo age-of-onset and PRS Association"
 author: "Genevieve HL Roberts"
-date: "2024-6-30"
+date: "2024-8-1"
 output:
   pdf_document:
     keep_tex: true
@@ -648,7 +648,12 @@ snp_estimate_res <- bind_rows(snp_estimate_res)
 test_result <- t.test(snp_estimate_res$null_slope, snp_estimate_res$slope) %>% tidy()
 slope = test_result %>% pull(estimate2)
 pval = test_result %>% pull(p.value)
-test_result
+pandoc.table(test_result)
+```
+```{r}
+#Get 95% CI for estimate #2
+slope_ci <- t.test(snp_estimate_res$slope, mu = 1) %>% tidy()
+pandoc.table(slope_ci)
 ```
 
 
