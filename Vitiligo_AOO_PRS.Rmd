@@ -27,6 +27,7 @@ library(pandoc)
 library(pander)
 library(car)
 library(data.table)
+library(patchwork)
 
 source(here("functions.R"))
 ```
@@ -345,23 +346,25 @@ as years per copy of SNP risk allele).
 ```{r}
 plot1a <- ggplot(analysis_df, aes(y = VITageonset,
                         x = CONFIRMED_prs_scaled)) +
-  geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
+  geom_point(alpha = 0.3, size = 0.8, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +
-  labs(title = "",
+  labs(title = "A",
        x = "Vitiligo PRS",
        y = "Vitiligo Age-of-Onset",
        color = "Age-of-Onset Category") +
     theme_bw() +
   xlim(-3, 5) +
   geom_text(aes(label = str_c("P-value = ", "1.59e-15")),
-             x = 4.9, y = 85, hjust = 1, vjust = 1, size = 2.5, color = "black") +
+             x = 4.9, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
   geom_text(aes(label = str_c("\u03B2 = ", "-2.37")),
-          x = 4.9, y = 80, hjust = 1, vjust = 1, size = 2.5, color = "black")
+          x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black") +
+  theme(legend.position = "none")
+  
 
 plot1a
 ```
 ```{r include=FALSE}
-ggsave(str_c(here(), "/figures/fig1a.eps"), height = 3, width = 6, units = "in")
+ggsave(str_c(here(), "/figures/fig1a.svg"), height = 3, width = 6, units = "in")
 ggsave(str_c(here(), "/figures/fig1a.tiff"), height = 3, width = 6, units = "in")
 ```
 
@@ -369,23 +372,33 @@ ggsave(str_c(here(), "/figures/fig1a.tiff"), height = 3, width = 6, units = "in"
 ```{r}
 plot1b <- ggplot(analysis_df, aes(y = VITageonset,
                         x = no_mhc_classII_prs_scaled)) +
-  geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
+  geom_point(alpha = 0.3, size = 0.8, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +
-  labs(title = "",
+  labs(title = "B",
        x = "Vitiligo PRS (MHC Class II Excluded)",
        y = "Vitiligo Age-of-Onset",
        color = "Age-of-Onset Category") +
+    scale_color_discrete(labels = c("early_onset" = "Early AOO", 
+                     "late_onset" = "Late AOO", 
+                     "NA" = "Not Assigned")) +
     theme_bw() +
   xlim(-3, 5) +
   geom_text(aes(label = str_c("P-value = ", "7.3e-04")),
              x = 4.9, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
   geom_text(aes(label = str_c("\u03B2 = ", "-1.03")),
-          x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black")
+          x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black") +
+  theme(legend.position = "bottom",
+        legend.background = element_rect(size = 0.5, linetype = "solid", colour = "black"),
+        legend.text = element_text(size = 6),       # Smaller legend text
+        legend.title = element_text(size = 6),     # Smaller legend title
+        legend.key.size = unit(0.5, "lines"),       # Smaller legend key size
+        legend.spacing = unit(0.1, "cm"))           # Smaller spacing between legend items
+
 
 plot1b
 ```
 ```{r include=FALSE}
-ggsave(str_c(here(), "/figures/fig1b.eps"), height = 3, width = 6, units = "in")
+ggsave(str_c(here(), "/figures/fig1b.svg"), height = 3, width = 6, units = "in")
 ggsave(str_c(here(), "/figures/fig1b.tiff"), height = 3, width = 6, units = "in")
 ```
 
@@ -439,9 +452,7 @@ plot1c <- ggplot(categorized_only_analysis_df, aes(y = VITageonset,
   geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +
   facet_grid(high_risk_MHC_haplotype_carrier ~ .) + 
-  labs(title = paste("Age-of-Onset ~ PRS",
-                     "Stratified by High-Risk MHC",
-                     "Haplotype Carrier Status", sep="\n"),
+  labs(title = "C",
        x = "Vitiligo PRS (MHC Class II Excluded)",
        y = "Vitiligo Age-of-Onset",
        color = "Age-of-Onset Category") +
@@ -450,7 +461,7 @@ plot1c <- ggplot(categorized_only_analysis_df, aes(y = VITageonset,
              x = 4.5, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
   geom_text(data = strat_hap_aoo_results_df,
           aes(label = paste0("\u03B2 = ", round(estimate, 2))),
-          x = 4.5, y = 80, hjust = 1, vjust = 1, size =3, color = "black") +
+          x = 4.5, y = 78, hjust = 1, vjust = 1, size =3, color = "black") +
   guides(color = FALSE) +
   theme(strip.text = element_text(size = 10))
 
@@ -459,10 +470,20 @@ plot1c
 ```
 
 ```{r include=FALSE}
-ggsave(str_c(here(), "/figures/fig1c.eps"), height = 6, width = 3, units = "in")
+ggsave(str_c(here(), "/figures/fig1c.svg"), height = 6, width = 3, units = "in")
 ggsave(str_c(here(), "/figures/fig1c.tiff"), height = 6, width = 3, units = "in")
 ```
 
+Put all of the Figure 1 panels together...
+```{r}
+plot1a + plot_spacer() + plot1b  + plot1c + 
+  plot_layout(widths = c(2, 1))
+```
+
+```{r include=FALSE}
+ggsave(str_c(here(), "/figures/fig1_all.svg"), height = 8, width = 6.8, units = "in")
+ggsave(str_c(here(), "/figures/fig1_all.tiff"), height = 8, width = 6.8, units = "in")
+```
 
 ```{r}
 aoo_by_hap_summ <- case_only_analysis_df %>%
@@ -712,7 +733,7 @@ plot2
 ```
 
 ```{r include=FALSE}
-ggsave(str_c(here(), "/figures/fig2.eps"), height = 5, width = 5, units = "in")
+ggsave(str_c(here(), "/figures/fig2.svg"), height = 5, width = 5, units = "in")
 ggsave(str_c(here(), "/figures/fig2.tiff"), height = 5, width = 5, units = "in")
 ```
 
