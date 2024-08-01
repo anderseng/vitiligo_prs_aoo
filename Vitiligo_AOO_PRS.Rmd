@@ -1,7 +1,7 @@
 ---
 title: "Vitiligo age-of-onset and PRS Association"
 author: "Genevieve HL Roberts"
-date: "2024-4-28"
+date: "2024-6-30"
 output:
   pdf_document:
     keep_tex: true
@@ -26,6 +26,7 @@ library(lubridate)
 library(pandoc)
 library(pander)
 library(car)
+library(data.table)
 
 source(here("functions.R"))
 ```
@@ -266,66 +267,6 @@ ggplot() +
   theme_minimal()
 ```
 
-## Compare Top 1 Percent PRS in Early vs Late Onset
-```{r}
-analysis_df <- analysis_df %>%
-  mutate(no_mhc_classII_prs_category =
-           case_when(
-             no_mhc_classII_prs_percentile >= 0.99 ~ "High PRS",
-             TRUE ~ "Normal PRS"
-           )) %>%
-  mutate(age_onset_category =
-           case_when(
-             VITageonset <= 12 ~ "Early Onset",
-             VITageonset <= 22 ~ "Intermediate Onset",
-             VITageonset > 22 ~ "Late Onset",
-             TRUE ~ NA_character_
-           ))
-
-prs_extremes_table <- analysis_df %>%
-  filter(!is.na(VITageonset)) %>%
-  group_by(no_mhc_classII_prs_category, eAOO_hap_carrier) %>%
-  summarize(n=n(),
-    mean_age = mean(VITageonset, na.rm=TRUE),
-    mean_no_mhc_percentile= mean(no_mhc_classII_prs_percentile, na.rm=TRUE)) %>%
-  na.omit() %>%
-  arrange(eAOO_hap_carrier, no_mhc_classII_prs_category)
-
-age_categories_table <- analysis_df %>%
-  filter(!is.na(VITageonset)) %>%
-  group_by(age_onset_category, eAOO_hap_carrier) %>%
-  summarize(n=n(),
-    mean_no_mhc_prs = mean(no_mhc_classII_prs_scaled, na.rm=TRUE),
-    mean_no_mhc_percentile = mean(no_mhc_classII_prs_percentile, na.rm=TRUE)) %>%
-  na.omit() %>%
-  arrange(eAOO_hap_carrier, age_onset_category)
-
-age_extremes_ct_table <- analysis_df %>%
-  filter(!is.na(VITageonset)) %>%
-  group_by(age_onset_category, no_mhc_classII_prs_category) %>%
-  summarize(n=n(),
-            mean_no_mhc_prs = mean(no_mhc_classII_prs_scaled, na.rm=TRUE),
-            mean_no_mhc_percentile = mean(no_mhc_classII_prs_percentile, na.rm=TRUE)) %>%
-  ungroup() %>%
-  group_by(age_onset_category) %>%
-  mutate(sum=sum(n)) %>%
-  ungroup() %>%
-  mutate(percent = n/sum) %>%
-  filter(age_onset_category %in% c("Early Onset", "Late Onset"),
-         no_mhc_classII_prs_category %in% c("High PRS", "Normal PRS"))
-
-fisher_p_value <- fisher.test(matrix(age_extremes_ct_table$n,
-                                      nrow = 2,
-                                      byrow = TRUE,
-                                      dimnames = list(c("Early Onset", "Late Onset"),
-                                                      c("High PRS", "Normal PRS"))))$p.value
-
-pandoc.table(age_extremes_ct_table )
-print(str_c("Fisher's Exact P-value: ", round(fisher_p_value, 2)))
-
-```
-
-
 
 \newpage
 ## Associations with Vitiligo Risk (Case-Control)
@@ -418,6 +359,8 @@ plot1a <- ggplot(analysis_df, aes(y = VITageonset,
           x = 4.9, y = 80, hjust = 1, vjust = 1, size = 2.5, color = "black")
 
 plot1a
+```
+```{r include=FALSE}
 ggsave(str_c(here(), "/figures/fig1a.eps"), height = 3, width = 6, units = "in")
 ggsave(str_c(here(), "/figures/fig1a.tiff"), height = 3, width = 6, units = "in")
 ```
@@ -440,6 +383,8 @@ plot1b <- ggplot(analysis_df, aes(y = VITageonset,
           x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black")
 
 plot1b
+```
+```{r include=FALSE}
 ggsave(str_c(here(), "/figures/fig1b.eps"), height = 3, width = 6, units = "in")
 ggsave(str_c(here(), "/figures/fig1b.tiff"), height = 3, width = 6, units = "in")
 ```
@@ -453,24 +398,24 @@ case_only_analysis_df <-
   case_only_analysis_df %>%
   mutate(high_risk_MHC_haplotype_carrier =
            ifelse(
-             eAOO_hap_carrier==1, "carrier", "non-carrier"
+             eAOO_hap_carrier==1, "1 or 2 Copies", "0 Copies"
            ))
 
 hap_carrier_res <- aoo_linear_regression(
-                        data = filter(case_only_analysis_df, high_risk_MHC_haplotype_carrier=="carrier"),
+                        data = filter(case_only_analysis_df, high_risk_MHC_haplotype_carrier=="1 or 2 Copies"),
                         covariates = kCovariates,
                         pheno = "VITageonset",
                         prs = "no_mhc_classII_prs_scaled") %>%
   filter(term == PRS) %>%
-  mutate(high_risk_MHC_haplotype_carrier = "carrier")
+  mutate(high_risk_MHC_haplotype_carrier = "1 or 2 Copies")
 
 non_carrier_res <- aoo_linear_regression(
-                        data = filter(case_only_analysis_df,high_risk_MHC_haplotype_carrier=="non-carrier"),
+                        data = filter(case_only_analysis_df,high_risk_MHC_haplotype_carrier=="0 Copies"),
                         covariates = kCovariates,
                         pheno = "VITageonset",
                         prs = "no_mhc_classII_prs_scaled") %>%
   filter(term == PRS) %>%
-  mutate(high_risk_MHC_haplotype_carrier = "non-carrier")
+  mutate(high_risk_MHC_haplotype_carrier = "0 Copies")
 
 strat_hap_aoo_results_df <- bind_rows(hap_carrier_res, non_carrier_res) %>%
   select(-term, - std_error) %>%
@@ -511,6 +456,9 @@ plot1c <- ggplot(categorized_only_analysis_df, aes(y = VITageonset,
 
 
 plot1c
+```
+
+```{r include=FALSE}
 ggsave(str_c(here(), "/figures/fig1c.eps"), height = 6, width = 3, units = "in")
 ggsave(str_c(here(), "/figures/fig1c.tiff"), height = 6, width = 3, units = "in")
 ```
@@ -539,7 +487,7 @@ pandoc.table(aoo_by_hap_summ)
 #test the association with vitiligo age-of-onset
 eAOO_res <- aoo_linear_regression(
                         data = filter(case_only_analysis_df,
-                                      early_onset_vitiligo==1 & high_risk_MHC_haplotype_carrier=="non-carrier"),
+                                      early_onset_vitiligo==1 & high_risk_MHC_haplotype_carrier=="0 Copies"),
                         covariates = kCovariates,
                         pheno = "VITageonset",
                         prs = "no_mhc_classII_prs_scaled") %>%
@@ -548,7 +496,7 @@ eAOO_res <- aoo_linear_regression(
 
 lAOO_res <- aoo_linear_regression(
                         data = filter(case_only_analysis_df,
-                                      late_onset_vitiligo==1 & high_risk_MHC_haplotype_carrier=="non-carrier"),
+                                      late_onset_vitiligo==1 & high_risk_MHC_haplotype_carrier=="1 or 2 Copies"),
                         covariates = kCovariates,
                         pheno = "VITageonset",
                         prs = "no_mhc_classII_prs_scaled") %>%
@@ -584,205 +532,183 @@ pandoc.table(risk_in_hap_carriers, round=2)
 
 ### Compare non-MHC SNP effect estimates in early- and late-onset
 
-First, downsample cases so that there are exactly 700 cases with early-onset and
-700 cases with late-onset. Then, compute the association between each of the 
+Randomly downsample cases so that there are exactly 700 cases with early-onset and
+700 cases with late-onset. Also randomly sample two sets of 700 cases each.
+Then, compute the association between each of the 
 non-MHC lead GWAS variants and disease risk.
 
 ```{r}
-#downsample so that early onset cases = late onset cases
-set.seed(123)
-analysis_df_downsample <- analysis_df %>%
-  filter(!is.na(AOO_category)) %>%
-  group_by(AOO_category) %>%
-  sample_n(700) %>%
-  ungroup() %>%
-  bind_rows(filter(analysis_df, vitiligo == 0))
-
-phenotypes <- c("early_onset_vitiligo",
-                "late_onset_vitiligo")
-
-predictors <- analysis_df %>%
-  select(starts_with("RS")) %>%
-  colnames(.)
-
-combos <- crossing(phenotypes, predictors) %>% arrange(desc(phenotypes))
-
-early_v_late_all_snps_downsample <- pmap_df(combos,
+# Define the function to perform bootstrapping
+perform_bootstrap <- function(data,
+                              iterations = 100,
+                              phenotypes = c("early_onset_vitiligo", "late_onset_vitiligo")) {
+  results <- list()
+  shuffle_from_col = phenotypes[1]
+  phenotypes = c(phenotypes, "shuffled_onset_vitiligo1", "shuffled_onset_vitiligo2")
+  
+  
+  for (i in 1:iterations) {
+    # True sample: Sample 700 individuals by AOO_category
+    true_sample <- data %>%
+      filter(!is.na(AOO_category)) %>%
+      group_by(AOO_category) %>%
+      sample_n(700, replace = TRUE) %>%
+      ungroup() %>%
+      #null sample: sample two sets of vitiligo cases and randomly assign AOO category
+      mutate(shuffled_onset_vitiligo1 = sample(x=c(NA,1), prob=c(0.5, 0.5), size=1400, replace=TRUE)) %>%
+      mutate(shuffled_onset_vitiligo2 = sample(x=c(NA,1), prob=c(0.5, 0.5), size=1400, replace=TRUE)) %>%
+      bind_rows(filter(data, vitiligo == 0)) %>%
+      mutate(shuffled_onset_vitiligo1 = ifelse(vitiligo==0, 0, shuffled_onset_vitiligo1)) %>%
+      mutate(shuffled_onset_vitiligo2 = ifelse(vitiligo==0, 0, shuffled_onset_vitiligo2))
+    
+    #setup to run logit across all snps
+    predictors <- data %>%
+      select(starts_with("RS")) %>%
+      colnames(.)
+    
+    combos <- crossing(phenotypes, predictors) %>%
+      arrange(desc(phenotypes))
+    
+    res_df <- pmap_df(combos,
                       ~ logistic_regression(
-                        data = analysis_df_downsample,
+                        data = true_sample,
                         covariates = kCovariates,
                         pheno = ..1,
                         prs = ..2)) %>%
-  filter(term == PRS) %>%
-  rename(SNP=PRS)
+      filter(term == PRS) %>%
+      rename(SNP = PRS) %>%
+      transmute(iteration = i,
+                Phenotype,
+                SNP,
+                estimate) %>%
+      pivot_wider(names_from = c(Phenotype), values_from = c(estimate)) %>%
+      mutate(early_v_late_estimate=early_onset_vitiligo - late_onset_vitiligo) %>%
+      mutate(shuffled_v_shuffled_estimate=shuffled_onset_vitiligo1 - shuffled_onset_vitiligo2)
+    
+    results[[i]] <- res_df
+  }
+  combined_results <- bind_rows(results)
+  return(combined_results)
+}
 
-pivot_eaoo_laoo_all_snps <- early_v_late_all_snps_downsample %>%
-  select(-term) %>%
-  mutate(z=estimate/std_error) %>%
-  pivot_wider(names_from = c(Phenotype),
-              values_from = c(z, estimate, std_error)) %>%
-  group_by(SNP) %>%
-  summarise(across(everything(), ~ first(na.omit(.)))) %>%
-  ungroup()
+filepath <- str_c(here(), "/bootstrap_compare_early_v_late_100_iterations.csv")
+
+if (file.exists(filepath)) {
+  # If the file exists, read the data
+  bootstrap_results <- fread(filepath)
+} else {
+  # If the file does not exist, run the bootstrap function and save the results
+  bootstrap_results <- perform_bootstrap(analysis_df, iterations = 100)
+  write.csv(bootstrap_results, filepath, quote=FALSE, row.names = FALSE)
+}
 ```
+
+
+
+```{r}
+# Use the bootstrap results to determine whether there is a true difference
+# in effect estimates
+
+snp_estimate_res = list()
+for(i in unique(bootstrap_results$iteration)){
+  tmp_dat <- bootstrap_results %>% filter(iteration==i)
+  
+  #compare whether a zero-intercept model yields a slope < 1 for early vs late onset
+  formula <- as.formula(paste("early_onset_vitiligo", "~", "late_onset_vitiligo -1"))
+  compare_snps_mod <- lm(formula,
+             data = filter(tmp_dat,
+              !SNP %in% c("RS145954018", "RS114448410")))
+  hypothesis <- c("late_onset_vitiligo = 1")
+  test_compare_snps_mod <- linearHypothesis(compare_snps_mod, hypothesis)
+  pval_compare_snps <- test_compare_snps_mod$`Pr(>F)`[2]
+  slope_compare_snps <- compare_snps_mod$coefficients[1]
+  
+  
+  #compare whether a zero-intercept model yields a slope < 1 for random case subsets
+    null_formula <- as.formula(paste("shuffled_onset_vitiligo1", "~", "shuffled_onset_vitiligo2 -1"))
+    null_compare_snps_mod <- lm(null_formula,
+             data = filter(tmp_dat,
+              !SNP %in% c("RS145954018", "RS114448410")))
+    null_hypothesis <- c("shuffled_onset_vitiligo2 = 1")
+    null_test_compare_snps_mod <- linearHypothesis(null_compare_snps_mod, null_hypothesis)
+    null_pval_compare_snps <- null_test_compare_snps_mod$`Pr(>F)`[2]
+    null_slope_compare_snps <- null_compare_snps_mod$coefficients[1]
+  
+  
+  #put the results together into a table
+  tmp_res <- tribble(
+    ~"iteration", ~"slope", ~"pvalue", ~"null_slope", ~"null_pvalue",
+    i, slope_compare_snps, pval_compare_snps, null_slope_compare_snps, null_pval_compare_snps 
+  )
+  snp_estimate_res[[i]] <-  tmp_res
+}
+snp_estimate_res <- bind_rows(snp_estimate_res)
+
+#perform t-test on bootstrap results (early v late slope vs. random v. random slope)
+test_result <- t.test(snp_estimate_res$null_slope, snp_estimate_res$slope) %>% tidy()
+slope = test_result %>% pull(estimate2)
+pval = test_result %>% pull(p.value)
+test_result
+```
+
+
+```{r}
+#use the bootstrap results results to get mean effect est
+early_v_late_snp_estimate <- bootstrap_results %>%
+  group_by(SNP) %>%
+  summarise(
+    mean_early_onset_vitiligo = mean(early_onset_vitiligo),
+    sd_early_onset_vitiligo = sd(early_onset_vitiligo),
+    mean_late_onset_vitiligo = mean(late_onset_vitiligo),
+    sd_late_onset_vitiligo = sd(late_onset_vitiligo),
+    mean_early_v_late_estimate = mean(early_v_late_estimate),
+    sd_early_v_late_estimate = sd(early_v_late_estimate)
+  ) %>%
+  mutate(predicted_early_onset = slope*mean_late_onset_vitiligo)
+early_v_late_snp_estimate
+```
+
+
 
 Below, I have plotted the effect estimates in the early-onset and late-onset group together. If the other loci have generally equivalent effects in both groups, we expect that the points should generally fall around the y=x line (denoted in red).  If, on the other hand, there is effect size dilution in the early-onset group, we expect that the slope will be <1.
 
 ```{r, fig.align='center'}
-# Test the hypothesis that the slope is < 1
-formula <- as.formula(paste("estimate_early_onset_vitiligo", "~", "estimate_late_onset_vitiligo"))
-
-compare_snps_mod <- lm(formula,
-             data = filter(pivot_eaoo_laoo_all_snps,
-              !SNP %in% c("RS145954018", "RS114448410")))
-hypothesis <- c("estimate_late_onset_vitiligo = 1") 
-
-test_compare_snps_mod <- linearHypothesis(compare_snps_mod, hypothesis)
-
-pval_compare_snps <- test_compare_snps_mod$`Pr(>F)`[2]
-slope_compare_snps <- compare_snps_mod$coefficients[2]
 
 ##make the plot
-plot2 <- ggplot(filter(pivot_eaoo_laoo_all_snps,
+plot2 <- ggplot(filter(early_v_late_snp_estimate,
               !SNP %in% c("RS145954018", "RS114448410")),
-       aes(x = estimate_late_onset_vitiligo,
-           y = estimate_early_onset_vitiligo)) +
-  geom_point() +
-  geom_smooth(method = "lm", se = TRUE, color = "blue") +
-  theme_bw() +
-  geom_abline(intercept=0, slope=1, color="red") +
-  xlim(0,0.7) +
-  ylim(0,0.7) +
+       aes(x = mean_late_onset_vitiligo,
+           y = mean_early_onset_vitiligo)) +
+  geom_point(color="grey") +
+  geom_errorbar(aes(
+    ymin = mean_early_onset_vitiligo - sd_early_onset_vitiligo,
+    ymax = mean_early_onset_vitiligo + sd_early_onset_vitiligo),
+    width = 0.02,
+    alpha = 0.2) +
+    geom_errorbarh(aes(
+    xmin = mean_late_onset_vitiligo - sd_late_onset_vitiligo,
+    xmax = mean_late_onset_vitiligo + sd_late_onset_vitiligo),
+    height = 0.02, 
+    alpha = 0.2) +
+  theme_classic() +
+  geom_abline(intercept=0, slope=1, color="black", linetype="dashed") +
+  geom_abline(intercept=0, slope=slope, color = "blue") +
+  xlim(-0.02,0.73) +
+  ylim(-0.02,0.73) +
   xlab(paste0("Late-Onset Vitiligo SNP ", "\u03B2", "s")) +
   ylab(paste0("Early-Onset Vitiligo SNP ", "\u03B2", "s")) +
-  geom_text(aes(label = paste0("P-value = ", round(pval_compare_snps, 2))),
-             x = 0.55, y = 0.7, hjust = 0, vjust = 0, size = 3, color = "black") +
-  geom_text(aes(label = paste0("\u03B2 = ", round(slope_compare_snps,2))),
-          x = 0.55, y = 0.65, hjust = 0, vjust = 0, size = 3, color = "black")
+  geom_text(aes(label = paste0("Bootstrap P-value = 6.75e-15")),
+             x = 0.39, y = 0.7, hjust = 0, vjust = 0, size = 3, color = "black") +
+  geom_text(aes(label = paste0("Mean Bootstrap \u03B2 = ", round(slope, 3))),
+          x = 0.39, y = 0.67, hjust = 0, vjust = 0, size = 3, color = "black")
 
 
 plot2
-ggsave(str_c(here(), "/figures/fig2.eps"), height = 3, width = 6, units = "in")
-ggsave(str_c(here(), "/figures/fig2.tiff"), height = 3, width = 6, units = "in")
 ```
 
-
-
-\newpage
-## Year of Onset Analysis
-For a subset of cases, I was able to find year-off-onset data.
-
-```{r}
-ctl_eaoo_hap_freq <- analysis_df %>%
-  group_by(vitiligo) %>%
-    summarize(n=n(),
-            carriers = sum(eAOO_hap_carrier, na.rm = TRUE)) %>%
-    mutate(percent_carriers = carriers/n*100)
-  
-
-yoo_only_df <- analysis_df %>%
-  filter(!is.na(year_of_onset)) %>%
-    mutate(period = 
-             case_when(
-    year_of_onset < 1950 ~ "<1951",
-    year_of_onset >= 1951 & year_of_onset <= 1969 ~ "1951-1969",
-    year_of_onset >= 1970 & year_of_onset <= 2004 ~ "1970-2004",
-    year_of_onset >= 2005 ~ "2005-2013"
-  )) %>%
-   mutate(period_ordinal = 
-             case_when(
-    year_of_onset < 1950 ~ NA_integer_,
-    year_of_onset >= 1951 & year_of_onset <= 1969 ~ 0,
-    year_of_onset >= 1970 & year_of_onset <= 2004 ~ 1,
-    year_of_onset >= 2005 ~ 2))
-
-yoo_only_df_filt <-  yoo_only_df %>%
-  filter(period != "<1951" & !is.na(period)) 
-
-summary_yoo <- yoo_only_df_filt%>%
-  group_by(period) %>%
-  summarize(n=n(),
-            carriers = sum(eAOO_hap_carrier, na.rm = TRUE),
-            mean_no_mhc_prs = mean(no_mhc_classII_prs_scaled, na.rm=TRUE),
-            mean_eAOO_PP = mean(eAOO_posterior_probability, na.rm=TRUE)) %>%
-  mutate(percent_carriers = carriers/n*100) %>%
-  transmute(
-    `Period` = period,
-    `n Total Vitiligo Cases` = n,
-    `Average Prob. of Early Onset` = mean_eAOO_PP,
-    `n MHC High Risk Haplotype Carriers` = carriers,
-    `% MHC High Risk Haplotype Carriers` = percent_carriers,
-    `Mean no-MHC PRS` = mean_no_mhc_prs
-  )
-
-pandoc.table(summary_yoo)
+```{r include=FALSE}
+ggsave(str_c(here(), "/figures/fig2.eps"), height = 5, width = 5, units = "in")
+ggsave(str_c(here(), "/figures/fig2.tiff"), height = 5, width = 5, units = "in")
 ```
-
-\newpage
-#### Association between eAOO SNP and year of onset
-```{r}
-formula <- as.formula(paste("year_of_onset", "~", 
-                            paste(c("eAOO_hap_carrier",
-                            kCovariates), collapse = " + ")))
-eaoo_year_onset_res <- lm(formula,
-             data = yoo_only_df_filt) %>%
-  broom::tidy()
-pandoc.table(eaoo_year_onset_res)
-```
-
-\newpage
-#### Association between PRS and year of onset period
-
-We noticed that in the table, the mean PRS appears as though it may be increasing
-with year of onset.  We explicitly test that hypothesis here.
-
-```{r}
-formula <- as.formula(paste("no_mhc_classII_prs_scaled", "~", 
-                            paste(c("period_ordinal",
-                            kCovariates), collapse = " + ")))
-prs_reg <- lm(formula,
-             data = yoo_only_df_filt) %>%
-  broom::tidy()
-pandoc.table(prs_reg)
-```
-
-```{r, fig.align='center'}
-# Calculate mean for each time period
-mean_data <- yoo_only_df_filt %>%
-  group_by(period) %>%
-  summarize(mean_prs = mean(no_mhc_classII_prs_scaled))
-
-intercept <- prs_reg %>% filter(term == "(Intercept)") %>% pull(estimate)
-slope <- prs_reg %>% filter(term == "period_ordinal") %>% pull(estimate)
-pval <- prs_reg %>% filter(term == "period_ordinal") %>% pull(p.value)
-
-# Plot
-plot3 <- ggplot(yoo_only_df_filt, aes(x = period, y = no_mhc_classII_prs_scaled, fill = period)) +
-  geom_violin(show.legend = FALSE) +
-  geom_boxplot(width = 0.1, fill = "white", color = "black", show.legend = FALSE) +
-  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, color = "black", show.legend = FALSE) + 
-  geom_abline(intercept = intercept, slope = slope, color = "blue") +
-  xlab("Time Period") +
-  ylab(paste("Incident Vitiligo Case PRS",
-  "(MHC Class II Excluded)", sep="\n")) +
-  geom_text(aes(label = paste0("P-value = ", round(pval, 2))),
-             x = max(yoo_only_df_filt$period), y = max(yoo_only_df_filt$no_mhc_classII_prs_scaled), hjust = 1, vjust = 1, size = 3, color = "black") +
-  geom_text(aes(label = paste0("\u03B2 = ", round(slope,2))),
-          x = max(yoo_only_df_filt$period), y = max(yoo_only_df_filt$no_mhc_classII_prs_scaled) - 0.4, hjust = 1, vjust = 1, size = 3, color = "black") +
-  theme_bw()
-
-plot3
-ggsave(str_c(here(), "/figures/fig3.eps"), height = 3, width = 6, units = "in")
-ggsave(str_c(here(), "/figures/fig3.tiff"), height = 3, width = 6, units = "in")
-
-```
-
-
-
-
-
-
-
-
 
 
