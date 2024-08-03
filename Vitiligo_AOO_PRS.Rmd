@@ -1,7 +1,7 @@
 ---
 title: "Vitiligo age-of-onset and PRS Association"
 author: "Genevieve HL Roberts"
-date: "2024-8-1"
+date: "2024-8-3"
 output:
   pdf_document:
     keep_tex: true
@@ -601,10 +601,11 @@ perform_bootstrap <- function(data,
       transmute(iteration = i,
                 Phenotype,
                 SNP,
-                estimate) %>%
-      pivot_wider(names_from = c(Phenotype), values_from = c(estimate)) %>%
-      mutate(early_v_late_estimate=early_onset_vitiligo - late_onset_vitiligo) %>%
-      mutate(shuffled_v_shuffled_estimate=shuffled_onset_vitiligo1 - shuffled_onset_vitiligo2)
+                estimate,
+                std_error) %>%
+      pivot_wider(names_from = c(Phenotype), values_from = c(estimate, std_error)) %>%
+      mutate(early_v_late_estimate=estimate_early_onset_vitiligo - estimate_late_onset_vitiligo) %>%
+      mutate(shuffled_v_shuffled_estimate=estimate_shuffled_onset_vitiligo1 - estimate_shuffled_onset_vitiligo2)
     
     results[[i]] <- res_df
   }
@@ -635,22 +636,22 @@ for(i in unique(bootstrap_results$iteration)){
   tmp_dat <- bootstrap_results %>% filter(iteration==i)
   
   #compare whether a zero-intercept model yields a slope < 1 for early vs late onset
-  formula <- as.formula(paste("early_onset_vitiligo", "~", "late_onset_vitiligo -1"))
+  formula <- as.formula(paste("estimate_early_onset_vitiligo", "~", "estimate_late_onset_vitiligo -1"))
   compare_snps_mod <- lm(formula,
              data = filter(tmp_dat,
               !SNP %in% c("RS145954018", "RS114448410")))
-  hypothesis <- c("late_onset_vitiligo = 1")
+  hypothesis <- c("estimate_late_onset_vitiligo = 1")
   test_compare_snps_mod <- linearHypothesis(compare_snps_mod, hypothesis)
   pval_compare_snps <- test_compare_snps_mod$`Pr(>F)`[2]
   slope_compare_snps <- compare_snps_mod$coefficients[1]
   
   
   #compare whether a zero-intercept model yields a slope < 1 for random case subsets
-    null_formula <- as.formula(paste("shuffled_onset_vitiligo1", "~", "shuffled_onset_vitiligo2 -1"))
+    null_formula <- as.formula(paste("estimate_shuffled_onset_vitiligo1", "~", "estimate_shuffled_onset_vitiligo2 -1"))
     null_compare_snps_mod <- lm(null_formula,
              data = filter(tmp_dat,
               !SNP %in% c("RS145954018", "RS114448410")))
-    null_hypothesis <- c("shuffled_onset_vitiligo2 = 1")
+    null_hypothesis <- c("estimate_shuffled_onset_vitiligo2 = 1")
     null_test_compare_snps_mod <- linearHypothesis(null_compare_snps_mod, null_hypothesis)
     null_pval_compare_snps <- null_test_compare_snps_mod$`Pr(>F)`[2]
     null_slope_compare_snps <- null_compare_snps_mod$coefficients[1]
@@ -671,6 +672,7 @@ slope = test_result %>% pull(estimate2)
 pval = test_result %>% pull(p.value)
 pandoc.table(test_result)
 ```
+
 ```{r}
 #Get 95% CI for estimate #2
 slope_ci <- t.test(snp_estimate_res$slope, mu = 1) %>% tidy()
@@ -679,19 +681,46 @@ pandoc.table(slope_ci)
 
 
 ```{r}
+#use the bootstrapping results to get a difference in effect estimates by SNP
+bootstrap_differences_by_SNP <- bootstrap_results %>%
+  group_by(SNP) %>%
+  summarise(
+    estimate_early_onset_vitiligo = mean(estimate_early_onset_vitiligo),
+    estimate_late_onset_vitiligo = mean(estimate_late_onset_vitiligo),
+    tidy(
+    t.test(early_v_late_estimate, shuffled_v_shuffled_estimate))) %>%
+  arrange(p.value) %>%
+  left_join(select(weights, SNP, Locus, Weights_risk_direction_only)) %>%
+  transmute(
+    SNP,
+    Locus,
+    `GWAS Reported Oveall OR` = exp(Weights_risk_direction_only),
+    `eAOO mean bootstrap OR` = exp(estimate_early_onset_vitiligo),
+    `lAOO mean bootstrap OR` = exp(estimate_late_onset_vitiligo),
+    `Early AOO vs. Late AOO Effect Difference` = estimate,
+    `Difference 95% CI Lower` = conf.low,
+    `Difference 95% CI Upper` = conf.high,
+    `Difference T Statistic` = statistic,
+    `P-value` = p.value,
+    `Bonferroni Corrected P-Value` = p.adjust(`P-value`, method = "bonferroni", n = 48)
+  )
+
+fwrite(bootstrap_differences_by_SNP, str_c(here(), "/Bootstrap_Effect_Differences_bySNP.csv"))
+pandoc.table(bootstrap_differences_by_SNP)
+```
+
+```{r}
 #use the bootstrap results results to get mean effect est
 early_v_late_snp_estimate <- bootstrap_results %>%
   group_by(SNP) %>%
   summarise(
-    mean_early_onset_vitiligo = mean(early_onset_vitiligo),
-    sd_early_onset_vitiligo = sd(early_onset_vitiligo),
-    mean_late_onset_vitiligo = mean(late_onset_vitiligo),
-    sd_late_onset_vitiligo = sd(late_onset_vitiligo),
-    mean_early_v_late_estimate = mean(early_v_late_estimate),
-    sd_early_v_late_estimate = sd(early_v_late_estimate)
+    mean_early_onset_vitiligo = mean(estimate_early_onset_vitiligo),
+    se_early_onset_vitiligo = mean(std_error_early_onset_vitiligo),
+    mean_late_onset_vitiligo = mean(estimate_late_onset_vitiligo),
+    se_late_onset_vitiligo = mean(std_error_late_onset_vitiligo),
   ) %>%
   mutate(predicted_early_onset = slope*mean_late_onset_vitiligo)
-early_v_late_snp_estimate
+pandoc.table(early_v_late_snp_estimate)
 ```
 
 
@@ -707,13 +736,13 @@ plot2 <- ggplot(filter(early_v_late_snp_estimate,
            y = mean_early_onset_vitiligo)) +
   geom_point(color="grey") +
   geom_errorbar(aes(
-    ymin = mean_early_onset_vitiligo - sd_early_onset_vitiligo,
-    ymax = mean_early_onset_vitiligo + sd_early_onset_vitiligo),
+    ymin = mean_early_onset_vitiligo - se_early_onset_vitiligo,
+    ymax = mean_early_onset_vitiligo + se_early_onset_vitiligo),
     width = 0.02,
     alpha = 0.2) +
     geom_errorbarh(aes(
-    xmin = mean_late_onset_vitiligo - sd_late_onset_vitiligo,
-    xmax = mean_late_onset_vitiligo + sd_late_onset_vitiligo),
+    xmin = mean_late_onset_vitiligo - se_late_onset_vitiligo,
+    xmax = mean_late_onset_vitiligo + se_late_onset_vitiligo),
     height = 0.02, 
     alpha = 0.2) +
   theme_classic() +
