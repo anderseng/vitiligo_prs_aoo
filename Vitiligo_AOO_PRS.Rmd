@@ -758,7 +758,7 @@ plot2 <- ggplot(filter(early_v_late_snp_estimate,
     alpha = 0.2) +
   theme_classic(base_family = "Arial") +
   geom_abline(intercept=0, slope=1, color="black", linetype="dashed") +
-  geom_abline(intercept=0, slope=slope, color = "blue") +
+  geom_abline(intercept=0, slope=slope, color = "black") +
   xlim(-0.02,0.73) +
   ylim(-0.02,0.73) +
   xlab(paste0("Late-Onset Vitiligo SNP ", "\u03B2", "s")) +
