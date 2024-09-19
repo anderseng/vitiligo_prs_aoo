@@ -8,6 +8,12 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+library(knitr)
+library(extrafont)
+font_import()
+loadfonts(device = "pdf")
+loadfonts(device = "postscript")
+
 knitr::opts_chunk$set(echo = FALSE, results = 'asis', message = FALSE, warning = FALSE)
 ```
 
@@ -28,7 +34,7 @@ library(pander)
 library(car)
 library(data.table)
 library(patchwork)
-
+library(extrafont)
 source(here("functions.R"))
 ```
 
@@ -258,7 +264,7 @@ histo_plot
 
 \newpage
 ## PRS distributions
-```{r}
+```{r density plot cases v controls}
 ggplot() +
   geom_density(data = filter(analysis_df, vitiligo == 0), aes(x = no_mhc_classII_prs_scaled), fill = "blue", alpha = 0.7) +
   geom_density(data = filter(analysis_df, vitiligo == 1), aes(x = no_mhc_classII_prs_scaled), fill = "green", alpha = 0.7) +
@@ -275,7 +281,7 @@ To verify that the associations look in line with previous estimates,
 we check the association of the PRS and the MHC Class II high-risk SNPs
 with overall vitiligo risk (i.e. in all cases and controls in GWAS123):
 
-```{r}
+```{r associations with vitiligo risk}
 #test the association of each PRS with vitiligo risk
 scaled_prs_cols <- analysis_df %>%
   select(ends_with("_prs_scaled")) %>%
@@ -315,7 +321,7 @@ whereas for SNPs, it is per SNP risk allele).
 
 I also checked the association with vitiligo age-of-onset
 risk (i.e. cases with non-missing age-of-onset in GWAS123):
-```{r}
+```{r associations with aoo}
 #test the association with vitiligo age-of-onset
 aoo_results_df <- pmap_df(list(prs = predictors),
                       ~ aoo_linear_regression(
@@ -343,18 +349,18 @@ are not directly comparable (for PRS, the estimate is interpreted as years
 per standard deviation of PRS, whereas for SNPs, it is interpreted
 as years per copy of SNP risk allele).
 
-```{r}
+```{r plot1a}
 plot1a <- ggplot(analysis_df, aes(y = VITageonset,
                         x = CONFIRMED_prs_scaled)) +
   geom_point(alpha = 0.3, size = 0.8, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +
   labs(title = "A",
        x = "Vitiligo PRS",
-       y = "Vitiligo Age-of-Onset",
-       color = "Age-of-Onset Category") +
-    theme_bw() +
+       y = "Vitiligo AOO",
+       color = "AOO Category") +
+    theme_bw(base_family = "Arial") +
   xlim(-3, 5) +
-  geom_text(aes(label = str_c("P-value = ", "1.59e-15")),
+  geom_text(aes(label = str_c("p value = ", "1.59e-15")),
              x = 4.9, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
   geom_text(aes(label = str_c("\u03B2 = ", "-2.37")),
           x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black") +
@@ -363,27 +369,27 @@ plot1a <- ggplot(analysis_df, aes(y = VITageonset,
 
 plot1a
 ```
-```{r include=FALSE}
-ggsave(str_c(here(), "/figures/fig1a.svg"), height = 3, width = 6, units = "in")
+```{r save plot1a, eval=FALSE}
+ggsave(str_c(here(), "/figures/fig1a.eps"), height = 3, width = 6, units = "in")
 ggsave(str_c(here(), "/figures/fig1a.tiff"), height = 3, width = 6, units = "in")
 ```
 
 
-```{r}
+```{r plot 1b}
 plot1b <- ggplot(analysis_df, aes(y = VITageonset,
                         x = no_mhc_classII_prs_scaled)) +
   geom_point(alpha = 0.3, size = 0.8, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +
   labs(title = "B",
        x = "Vitiligo PRS (MHC Class II Excluded)",
-       y = "Vitiligo Age-of-Onset",
-       color = "Age-of-Onset Category") +
+       y = "Vitiligo AOO",
+       color = "AOO Category") +
     scale_color_discrete(labels = c("early_onset" = "Early AOO", 
                      "late_onset" = "Late AOO", 
                      "NA" = "Not Assigned")) +
-    theme_bw() +
+    theme_bw(base_family = "Arial") +
   xlim(-3, 5) +
-  geom_text(aes(label = str_c("P-value = ", "7.3e-04")),
+  geom_text(aes(label = str_c("p value = ", "7.3e-04")),
              x = 4.9, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
   geom_text(aes(label = str_c("\u03B2 = ", "-1.03")),
           x = 4.9, y = 80, hjust = 1, vjust = 1, size = 3, color = "black") +
@@ -397,8 +403,8 @@ plot1b <- ggplot(analysis_df, aes(y = VITageonset,
 
 plot1b
 ```
-```{r include=FALSE}
-ggsave(str_c(here(), "/figures/fig1b.svg"), height = 3, width = 6, units = "in")
+```{r save plot 1b, eval=FALSE}
+ggsave(str_c(here(), "/figures/fig1b.eps"), height = 3, width = 6, units = "in")
 ggsave(str_c(here(), "/figures/fig1b.tiff"), height = 3, width = 6, units = "in")
 ```
 
@@ -443,49 +449,54 @@ pandoc.table(strat_hap_aoo_results_df,
              caption = "Stratified Association between PRS and Age-of-Onset in High Risk Haplotype Carrier Groups")
 ```
 
-```{r, fig.asp=1.8}
+```{r plot 1c, fig.asp=1.8}
 categorized_only_analysis_df <- case_only_analysis_df %>%
-  filter(!is.na(high_risk_MHC_haplotype_carrier))
+  filter(!is.na(high_risk_MHC_haplotype_carrier)) %>%
+  mutate(high_risk_MHC_haplotype_carrier = paste("High Risk MHC Class II Hap.\n", high_risk_MHC_haplotype_carrier))
+
+strat_hap_aoo_results_df <- strat_hap_aoo_results_df %>%
+  mutate(high_risk_MHC_haplotype_carrier = paste("High Risk MHC Class II Hap.\n", high_risk_MHC_haplotype_carrier))
+  
 
 plot1c <- ggplot(categorized_only_analysis_df, aes(y = VITageonset,
                         x = no_mhc_classII_prs_scaled)) +
   geom_point(alpha = 0.3, size = 0.4, aes(color = factor(AOO_category))) + 
   geom_smooth(method = "lm", se = TRUE, color="black") +
-  facet_grid(high_risk_MHC_haplotype_carrier ~ .) + 
+  facet_grid(high_risk_MHC_haplotype_carrier ~ ., labeller = label_value) + 
   labs(title = "C",
        x = "Vitiligo PRS (MHC Class II Excluded)",
-       y = "Vitiligo Age-of-Onset",
-       color = "Age-of-Onset Category") +
-    theme_bw() +
-  geom_text(data = strat_hap_aoo_results_df, aes(label = paste0("P-value = ", pval)),
+       y = "Vitiligo AOO",
+       color = "AOO Category") +
+    theme_bw(base_family = "Arial") +
+  geom_text(data = strat_hap_aoo_results_df, aes(label = paste0("p value = ", pval)),
              x = 4.5, y = 85, hjust = 1, vjust = 1, size = 3, color = "black") +
   geom_text(data = strat_hap_aoo_results_df,
           aes(label = paste0("\u03B2 = ", round(estimate, 2))),
           x = 4.5, y = 78, hjust = 1, vjust = 1, size =3, color = "black") +
   guides(color = FALSE) +
-  theme(strip.text = element_text(size = 10))
+  theme(strip.text = element_text(size = 8))
 
 
 plot1c
 ```
 
-```{r include=FALSE}
-ggsave(str_c(here(), "/figures/fig1c.svg"), height = 6, width = 3, units = "in")
+```{r save plot 1c, eval=FALSE}
+ggsave(str_c(here(), "/figures/fig1c.eps"), height = 6, width = 3, units = "in")
 ggsave(str_c(here(), "/figures/fig1c.tiff"), height = 6, width = 3, units = "in")
 ```
 
 Put all of the Figure 1 panels together...
-```{r}
+```{r plot 1 all}
 plot1a + plot_spacer() + plot1b  + plot1c + 
   plot_layout(widths = c(2, 1))
 ```
 
-```{r include=FALSE}
+```{r save plot1all, eval=FALSE}
 ggsave(str_c(here(), "/figures/fig1_all.svg"), height = 8, width = 6.8, units = "in")
 ggsave(str_c(here(), "/figures/fig1_all.tiff"), height = 8, width = 6.8, units = "in")
 ```
 
-```{r}
+```{r aoo hap summary table}
 aoo_by_hap_summ <- case_only_analysis_df %>%
   group_by(AOO_category, high_risk_MHC_haplotype_carrier) %>%
   summarize(n=n()) %>%
@@ -504,7 +515,7 @@ pandoc.table(aoo_by_hap_summ)
 \newpage
 ### Stratified Association in Early and Late Onset Groups
 
-```{r}
+```{r stratified association eaoo v laoo}
 #test the association with vitiligo age-of-onset
 eAOO_res <- aoo_linear_regression(
                         data = filter(case_only_analysis_df,
@@ -538,7 +549,7 @@ pandoc.table(strat_aoo_results_df,
 ```
 
 ### Look at assocaition of PRS in MHC High Risk Haplotype Carriers
-```{r}
+```{r mhc haplotype carriers}
 risk_in_hap_carriers <- logistic_regression(data = filter(analysis_df, eAOO_hap_carrier==1),
                         covariates = c(kCovariates),
                         pheno = "vitiligo",
@@ -558,7 +569,7 @@ Randomly downsample cases so that there are exactly 700 cases with early-onset a
 Then, compute the association between each of the 
 non-MHC lead GWAS variants and disease risk.
 
-```{r}
+```{r downsample}
 # Define the function to perform bootstrapping
 perform_bootstrap <- function(data,
                               iterations = 100,
@@ -627,7 +638,7 @@ if (file.exists(filepath)) {
 
 
 
-```{r}
+```{r bootstrap}
 # Use the bootstrap results to determine whether there is a true difference
 # in effect estimates
 
@@ -673,14 +684,14 @@ pval = test_result %>% pull(p.value)
 pandoc.table(test_result)
 ```
 
-```{r}
+```{r cis}
 #Get 95% CI for estimate #2
 slope_ci <- t.test(snp_estimate_res$slope, mu = 1) %>% tidy()
 pandoc.table(slope_ci)
 ```
 
 
-```{r}
+```{r bootstraping results by snp}
 #use the bootstrapping results to get a difference in effect estimates by SNP
 bootstrap_differences_by_SNP <- bootstrap_results %>%
   group_by(SNP) %>%
@@ -709,7 +720,7 @@ fwrite(bootstrap_differences_by_SNP, str_c(here(), "/Bootstrap_Effect_Difference
 pandoc.table(bootstrap_differences_by_SNP)
 ```
 
-```{r}
+```{r bootstrap results overall by snp}
 #use the bootstrap results results to get mean effect est
 early_v_late_snp_estimate <- bootstrap_results %>%
   group_by(SNP) %>%
@@ -727,7 +738,7 @@ pandoc.table(early_v_late_snp_estimate)
 
 Below, I have plotted the effect estimates in the early-onset and late-onset group together. If the other loci have generally equivalent effects in both groups, we expect that the points should generally fall around the y=x line (denoted in red).  If, on the other hand, there is effect size dilution in the early-onset group, we expect that the slope will be <1.
 
-```{r, fig.align='center'}
+```{r plot2, fig.align='center'}
 
 ##make the plot
 plot2 <- ggplot(filter(early_v_late_snp_estimate,
@@ -745,14 +756,14 @@ plot2 <- ggplot(filter(early_v_late_snp_estimate,
     xmax = mean_late_onset_vitiligo + se_late_onset_vitiligo),
     height = 0.02, 
     alpha = 0.2) +
-  theme_classic() +
+  theme_classic(base_family = "Arial") +
   geom_abline(intercept=0, slope=1, color="black", linetype="dashed") +
   geom_abline(intercept=0, slope=slope, color = "blue") +
   xlim(-0.02,0.73) +
   ylim(-0.02,0.73) +
   xlab(paste0("Late-Onset Vitiligo SNP ", "\u03B2", "s")) +
   ylab(paste0("Early-Onset Vitiligo SNP ", "\u03B2", "s")) +
-  geom_text(aes(label = paste0("Bootstrap P-value = 6.75e-15")),
+  geom_text(aes(label = paste0("Bootstrap p value = 6.75e-15")),
              x = 0.39, y = 0.7, hjust = 0, vjust = 0, size = 3, color = "black") +
   geom_text(aes(label = paste0("Mean Bootstrap \u03B2 = ", round(slope, 3))),
           x = 0.39, y = 0.67, hjust = 0, vjust = 0, size = 3, color = "black")
@@ -761,7 +772,7 @@ plot2 <- ggplot(filter(early_v_late_snp_estimate,
 plot2
 ```
 
-```{r include=FALSE}
+```{r save plot2, eval=FALSE}
 ggsave(str_c(here(), "/figures/fig2.svg"), height = 5, width = 5, units = "in")
 ggsave(str_c(here(), "/figures/fig2.tiff"), height = 5, width = 5, units = "in")
 ```
